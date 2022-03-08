@@ -125,9 +125,12 @@ main(int argc, char *argv[]) {
 		return 1;
 	}
 
+    /* toby@2022-03-08): 初始化线程数据 struct skynet_node */
 	skynet_globalinit();
+    /* toby@2022-03-08): 初始化环境lua虚拟机 struct skynet_env */
 	skynet_env_init();
 
+    /* toby@2022-03-08): 屏蔽pipe信号 */
 	sigign();
 
 	struct skynet_config config;
@@ -144,6 +147,7 @@ main(int argc, char *argv[]) {
 	assert(err == LUA_OK);
 	lua_pushstring(L, config_file);
 
+    /* toby@2022-03-08): 加载配置文件 */
 	err = lua_pcall(L, 1, 1, 0);
 	if (err) {
 		fprintf(stderr,"%s\n",lua_tostring(L,-1));

@@ -17,11 +17,14 @@ rwlock_init(struct rwlock *lock) {
 static inline void
 rwlock_rlock(struct rwlock *lock) {
 	for (;;) {
+        /* toby@2022-03-04): 写锁住时空转 */
 		while(lock->write) {
 			__sync_synchronize();
 		}
+        /* toby@2022-03-04): 读计数+1 */
 		__sync_add_and_fetch(&lock->read,1);
 		if (lock->write) {
+            /* toby@2022-03-04): 写在此时锁住了 读计数-1 继续空转 */
 			__sync_sub_and_fetch(&lock->read,1);
 		} else {
 			break;
@@ -31,7 +34,9 @@ rwlock_rlock(struct rwlock *lock) {
 
 static inline void
 rwlock_wlock(struct rwlock *lock) {
+    /* toby@2022-03-04): 拿到写锁 */
 	while (__sync_lock_test_and_set(&lock->write,1)) {}
+    /* toby@2022-03-04): 等待所有读锁打开 */
 	while(lock->read) {
 		__sync_synchronize();
 	}

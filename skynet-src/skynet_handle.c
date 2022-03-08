@@ -10,6 +10,7 @@
 
 #define DEFAULT_SLOT_SIZE 4
 #define MAX_SLOT_SIZE 0x40000000
+#define HASH_HANDLE(s, handle) (handle & (s->slot_size-1))
 
 struct handle_name {
 	char * name;
@@ -19,14 +20,14 @@ struct handle_name {
 struct handle_storage {
 	struct rwlock lock;
 
-	uint32_t harbor;
-	uint32_t handle_index;
-	int slot_size;
-	struct skynet_context ** slot;
-	
+	uint32_t harbor;                /* toby@2022-03-02): 每个进程一个8bit的标志 用作集群节点 */
+	uint32_t handle_index;          /* toby@2022-03-02): 每个服务对应一个24位范围内的id 0 被保留*/
+	int slot_size;                  /* toby@2022-03-02): 可以容纳的服务数 */
+	struct skynet_context ** slot;  /* toby@2022-03-02): 服务的指针数组 */
+
 	int name_cap;
 	int name_count;
-	struct handle_name *name;
+	struct handle_name *name;       /* toby@2022-03-04): 名字数组，按字符串大小排序 */
 };
 
 static struct handle_storage *H = NULL;
@@ -36,7 +37,7 @@ skynet_handle_register(struct skynet_context *ctx) {
 	struct handle_storage *s = H;
 
 	rwlock_wlock(&s->lock);
-	
+
 	for (;;) {
 		int i;
 		uint32_t handle = s->handle_index;
@@ -45,7 +46,7 @@ skynet_handle_register(struct skynet_context *ctx) {
 				// 0 is reserved
 				handle = 1;
 			}
-			int hash = handle & (s->slot_size-1);
+            int hash = HASH_HANDLE(s, handle);
 			if (s->slot[hash] == NULL) {
 				s->slot[hash] = ctx;
 				s->handle_index = handle + 1;
@@ -56,6 +57,7 @@ skynet_handle_register(struct skynet_context *ctx) {
 				return handle;
 			}
 		}
+        //(toby@2022-03-01): id不够用了 按2倍扩展
 		assert((s->slot_size*2 - 1) <= HANDLE_MASK);
 		struct skynet_context ** new_slot = skynet_malloc(s->slot_size * 2 * sizeof(struct skynet_context *));
 		memset(new_slot, 0, s->slot_size * 2 * sizeof(struct skynet_context *));
@@ -77,7 +79,7 @@ skynet_handle_retire(uint32_t handle) {
 
 	rwlock_wlock(&s->lock);
 
-	uint32_t hash = handle & (s->slot_size-1);
+	uint32_t hash = HASH_HANDLE(s, handle);
 	struct skynet_context * ctx = s->slot[hash];
 
 	if (ctx != NULL && skynet_context_handle(ctx) == handle) {
@@ -90,6 +92,7 @@ skynet_handle_retire(uint32_t handle) {
 				skynet_free(s->name[i].name);
 				continue;
 			} else if (i!=j) {
+                /* toby@2022-03-02): 后面的值都向前移动 */
 				s->name[j] = s->name[i];
 			}
 			++j;
@@ -109,7 +112,7 @@ skynet_handle_retire(uint32_t handle) {
 	return ret;
 }
 
-void 
+void
 skynet_handle_retireall() {
 	struct handle_storage *s = H;
 	for (;;) {
@@ -119,8 +122,9 @@ skynet_handle_retireall() {
 			rwlock_rlock(&s->lock);
 			struct skynet_context * ctx = s->slot[i];
 			uint32_t handle = 0;
-			if (ctx)
+			if (ctx) {
 				handle = skynet_context_handle(ctx);
+            }
 			rwlock_runlock(&s->lock);
 			if (handle != 0) {
 				if (skynet_handle_retire(handle)) {
@@ -133,14 +137,14 @@ skynet_handle_retireall() {
 	}
 }
 
-struct skynet_context * 
+struct skynet_context *
 skynet_handle_grab(uint32_t handle) {
 	struct handle_storage *s = H;
 	struct skynet_context * result = NULL;
 
 	rwlock_rlock(&s->lock);
 
-	uint32_t hash = handle & (s->slot_size-1);
+	uint32_t hash = HASH_HANDLE(s, handle);
 	struct skynet_context * ctx = s->slot[hash];
 	if (ctx && skynet_context_handle(ctx) == handle) {
 		result = ctx;
@@ -152,7 +156,7 @@ skynet_handle_grab(uint32_t handle) {
 	return result;
 }
 
-uint32_t 
+uint32_t
 skynet_handle_findname(const char * name) {
 	struct handle_storage *s = H;
 
@@ -232,7 +236,7 @@ _insert_name(struct handle_storage *s, const char * name, uint32_t handle) {
 	return result;
 }
 
-const char * 
+const char *
 skynet_handle_namehandle(uint32_t handle, const char *name) {
 	rwlock_wlock(&H->lock);
 
@@ -243,7 +247,7 @@ skynet_handle_namehandle(uint32_t handle, const char *name) {
 	return ret;
 }
 
-void 
+void
 skynet_handle_init(int harbor) {
 	assert(H==NULL);
 	struct handle_storage * s = skynet_malloc(sizeof(*H));

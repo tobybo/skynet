@@ -8,6 +8,7 @@ struct skynet_context;
 struct skynet_message;
 struct skynet_monitor;
 
+/* toby@2022-03-07): 新建服务 */
 struct skynet_context * skynet_context_new(const char * name, const char * parm);
 void skynet_context_grab(struct skynet_context *);
 void skynet_context_reserve(struct skynet_context *ctx);

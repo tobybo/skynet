@@ -51,6 +51,7 @@ _try_open(struct modules *m, const char * name) {
 			fprintf(stderr,"Invalid C service path\n");
 			exit(1);
 		}
+        /* toby@2022-03-07): tmp = cservice/name.so */
 		dl = dlopen(tmp, RTLD_NOW | RTLD_GLOBAL);
 		path = l;
 	}while(dl == NULL);
@@ -62,7 +63,7 @@ _try_open(struct modules *m, const char * name) {
 	return dl;
 }
 
-static struct skynet_module * 
+static struct skynet_module *
 _query(const char * name) {
 	int i;
 	for (i=0;i<M->count;i++) {
@@ -91,15 +92,18 @@ get_api(struct skynet_module *mod, const char *api_name) {
 
 static int
 open_sym(struct skynet_module *mod) {
+    /* toby@2022-03-07): 创建 ctx */
 	mod->create = get_api(mod, "_create");
+    /* toby@2022-03-07): 初始化 ctx */
 	mod->init = get_api(mod, "_init");
+    /* toby@2022-03-07): 释放 ctx */
 	mod->release = get_api(mod, "_release");
 	mod->signal = get_api(mod, "_signal");
 
 	return mod->init == NULL;
 }
 
-struct skynet_module * 
+struct skynet_module *
 skynet_module_query(const char * name) {
 	struct skynet_module * result = _query(name);
 	if (result)
@@ -110,6 +114,7 @@ skynet_module_query(const char * name) {
 	result = _query(name); // double check
 
 	if (result == NULL && M->count < MAX_MODULE_TYPE) {
+        /* toby@2022-03-07): c服务模块so文件加载 */
 		int index = M->count;
 		void * dl = _try_open(M,name);
 		if (dl) {
@@ -129,7 +134,7 @@ skynet_module_query(const char * name) {
 	return result;
 }
 
-void 
+void
 skynet_module_insert(struct skynet_module *mod) {
 	SPIN_LOCK(M)
 
@@ -142,7 +147,7 @@ skynet_module_insert(struct skynet_module *mod) {
 	SPIN_UNLOCK(M)
 }
 
-void * 
+void *
 skynet_module_instance_create(struct skynet_module *m) {
 	if (m->create) {
 		return m->create();
@@ -156,7 +161,7 @@ skynet_module_instance_init(struct skynet_module *m, void * inst, struct skynet_
 	return m->init(inst, ctx, parm);
 }
 
-void 
+void
 skynet_module_instance_release(struct skynet_module *m, void *inst) {
 	if (m->release) {
 		m->release(inst);
@@ -170,7 +175,7 @@ skynet_module_instance_signal(struct skynet_module *m, void *inst, int signal) {
 	}
 }
 
-void 
+void
 skynet_module_init(const char *path) {
 	struct modules *m = skynet_malloc(sizeof(*m));
 	m->count = 0;
