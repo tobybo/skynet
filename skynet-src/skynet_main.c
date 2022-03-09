@@ -85,28 +85,53 @@ int sigign() {
 
 static const char * load_config = "\
 	local result = {}\n\
+\n\
+    --(toby@2022-03-09): 将配置中的 $XXX 转化为环境变量XXX的值 \n\
 	local function getenv(name) return assert(os.getenv(name), [[os.getenv() failed: ]] .. name) end\n\
+\n\
+    --(toby@2022-03-09): 获取文件分隔符 linux上是 "/" \n\
 	local sep = package.config:sub(1,1)\n\
+\n\
+    --(toby@2022-03-09): 设置当前路径 "./" \n\
 	local current_path = [[.]]..sep\n\
+\n\
+    --(toby@2022-03-09): 引入其他文件配置 \n\
+    --  例如 include "config.path" filename = "config.path" \n\
 	local function include(filename)\n\
 		local last_path = current_path\n\
+\n\
+        --(toby@2022-03-09): 解析filename 模式为 (path/)(name) \n\
 		local path, name = filename:match([[(.*]]..sep..[[)(.*)$]])\n\
 		if path then\n\
 			if path:sub(1,1) == sep then	-- root\n\
+                --(toby@2022-03-09): 路径首字符为 "/" 表示绝对路径 \n\
 				current_path = path\n\
 			else\n\
+                --(toby@2022-03-09): 相对路径 \n\
 				current_path = current_path .. path\n\
 			end\n\
 		else\n\
+            --(toby@2022-03-09): 就在当前目录，没有匹配出path \n\
 			name = filename\n\
 		end\n\
+\n\
+        --(toby@2022-03-09): 打开配置文件 \n\
 		local f = assert(io.open(current_path .. name))\n\
+\n\
+        --(toby@2022-03-09): 读取所有行到code \n\
 		local code = assert(f:read [[*a]])\n\
+\n\
+        --(toby@2022-03-09): 将配置中的 $XXX 转化为环境变量XXX的值 \n\
 		code = string.gsub(code, [[%$([%w_%d]+)]], getenv)\n\
 		f:close()\n\
+\n\
+        --(toby@2022-03-09): load (chunk [, chunkname [, mode [, env]]]) \n\
+        --  _ENV = result \n\
+        --  加载配置内容到 result \n\
 		assert(load(code,[[@]]..filename,[[t]],result))()\n\
 		current_path = last_path\n\
 	end\n\
+\n\
 	setmetatable(result, { __index = { include = include } })\n\
 	local config_name = ...\n\
 	include(config_name)\n\
@@ -154,6 +179,7 @@ main(int argc, char *argv[]) {
 		lua_close(L);
 		return 1;
 	}
+    /* toby@2022-03-09): 读取配置到c环境中 */
 	_init_env(L);
 
 	config.thread =  optint("thread",8);
