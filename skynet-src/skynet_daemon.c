@@ -102,17 +102,20 @@ daemon_init(const char *pidfile) {
 #ifdef __APPLE__
 	fprintf(stderr, "'daemon' is deprecated: first deprecated in OS X 10.5 , use launchd instead.\n");
 #else
+    /* toby@2022-03-10): 创建子进程，退出父进程 */
 	if (daemon(1,1)) {
 		fprintf(stderr, "Can't daemonize.\n");
 		return 1;
 	}
 #endif
 
+    /* toby@2022-03-10): 记录pid */
 	pid = write_pid(pidfile);
 	if (pid == 0) {
 		return 1;
 	}
 
+    /* toby@2022-03-10): 重定向标准输入、标准输出、标准错误 */
 	if (redirect_fds()) {
 		return 1;
 	}

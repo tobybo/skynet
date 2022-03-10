@@ -15,12 +15,12 @@ struct skynet_env {
 
 static struct skynet_env *E = NULL;
 
-const char * 
+const char *
 skynet_getenv(const char *key) {
 	SPIN_LOCK(E)
 
 	lua_State *L = E->L;
-	
+
 	lua_getglobal(L, key);
 	const char * result = lua_tostring(L, -1);
 	lua_pop(L, 1);
@@ -30,13 +30,13 @@ skynet_getenv(const char *key) {
 	return result;
 }
 
-void 
+void
 skynet_setenv(const char *key, const char *value) {
 	SPIN_LOCK(E)
-	
+
 	lua_State *L = E->L;
 	lua_getglobal(L, key);
-	assert(lua_isnil(L, -1));
+	assert(lua_isnil(L, -1)); /* toby@2022-03-09): 设置的变量原来的值要为nil */
 	lua_pop(L,1);
 	lua_pushstring(L,value);
 	lua_setglobal(L,key);
