@@ -9,20 +9,20 @@
 #include <assert.h>
 
 static struct skynet_context * REMOTE = 0;
-static unsigned int HARBOR = ~0;
+static unsigned int HARBOR = ~0; /* toby@2022-03-10): 全1表示非集群节点，禁止远程调用 */
 
 static inline int
 invalid_type(int type) {
 	return type != PTYPE_SYSTEM && type != PTYPE_HARBOR;
 }
 
-void 
+void
 skynet_harbor_send(struct remote_message *rmsg, uint32_t source, int session) {
 	assert(invalid_type(rmsg->type) && REMOTE);
 	skynet_context_send(REMOTE, rmsg, sizeof(*rmsg) , source, PTYPE_SYSTEM , session);
 }
 
-int 
+int
 skynet_harbor_message_isremote(uint32_t handle) {
 	assert(HARBOR != ~0);
 	int h = (handle & ~HANDLE_MASK);

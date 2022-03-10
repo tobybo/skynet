@@ -175,19 +175,18 @@ main(int argc, char *argv[]) {
 		lua_close(L);
 		return 1;
 	}
-    /* toby@2022-03-09): 读取配置到c环境中 */
-	_init_env(L);
 
-	config.thread =  optint("thread",8);
-	config.module_path = optstring("cpath","./cservice/?.so");
-	config.harbor = optint("harbor", 1);
-	config.bootstrap = optstring("bootstrap","snlua bootstrap");
-	config.daemon = optstring("daemon", NULL);
-	config.logger = optstring("logger", NULL);
+	_init_env(L); /* toby@2022-03-09): 读取配置到c环境中 */
+	lua_close(L); /* toby@2022-03-10): 关闭临时虚拟机 */
+
+	config.thread =  optint("thread",8); /* toby@2022-03-10): 工作线程数 */
+	config.module_path = optstring("cpath","./cservice/?.so"); /* toby@2022-03-10): c服务路径 */
+	config.harbor = optint("harbor", 1); /* toby@2022-03-10): 集群节点id */
+	config.bootstrap = optstring("bootstrap","snlua bootstrap")
+	config.daemon = optstring("daemon", NULL); /* toby@2022-03-10): 后台模式，存放进程id的文件名 */
+	config.logger = optstring("logger", NULL); /* toby@2022-03-10): 日志的路径名，不配置的话则输出到标准输出，需要开前台模式才能看到 */
 	config.logservice = optstring("logservice", "logger");
 	config.profile = optboolean("profile", 1);
-
-	lua_close(L);
 
 	skynet_start(&config);
 	skynet_globalexit();

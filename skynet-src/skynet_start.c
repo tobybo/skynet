@@ -181,13 +181,14 @@ thread_worker(void *p) {
 
 static void
 start(int thread) {
+    /* toby@2022-03-10): thread个工作线程 + 三个基础线程（监控，定时器，网络） */
 	pthread_t pid[thread+3];
 
+    /* toby@2022-03-10): 监控数据初始化 */
 	struct monitor *m = skynet_malloc(sizeof(*m));
 	memset(m, 0, sizeof(*m));
 	m->count = thread;
 	m->sleep = 0;
-
 	m->m = skynet_malloc(thread * sizeof(struct skynet_monitor *));
 	int i;
 	for (i=0;i<thread;i++) {
@@ -206,10 +207,10 @@ start(int thread) {
 	create_thread(&pid[1], thread_timer, m);
 	create_thread(&pid[2], thread_socket, m);
 
-	static int weight[] = { 
+	static int weight[] = {
 		-1, -1, -1, -1, 0, 0, 0, 0,
-		1, 1, 1, 1, 1, 1, 1, 1, 
-		2, 2, 2, 2, 2, 2, 2, 2, 
+		1, 1, 1, 1, 1, 1, 1, 1,
+		2, 2, 2, 2, 2, 2, 2, 2,
 		3, 3, 3, 3, 3, 3, 3, 3, };
 	struct worker_parm wp[thread];
 	for (i=0;i<thread;i++) {
@@ -224,7 +225,7 @@ start(int thread) {
 	}
 
 	for (i=0;i<thread+3;i++) {
-		pthread_join(pid[i], NULL); 
+		pthread_join(pid[i], NULL);
 	}
 
 	free_monitor(m);
@@ -254,36 +255,39 @@ bootstrap(struct skynet_context * logger, const char * cmdline) {
 	}
 }
 
-void 
+void
 skynet_start(struct skynet_config * config) {
 	// register SIGHUP for log file reopen
 	struct sigaction sa;
 	sa.sa_handler = &handle_hup;
-	sa.sa_flags = SA_RESTART;
+	sa.sa_flags = SA_RESTART; /* toby@2022-03-10): 信号处理结束，重启被打断的阻塞调用 */
 	sigfillset(&sa.sa_mask);
 	sigaction(SIGHUP, &sa, NULL);
 
 	if (config->daemon) {
+        /* toby@2022-03-10): 设置后台模式 */
 		if (daemon_init(config->daemon)) {
 			exit(1);
 		}
 	}
-	skynet_harbor_init(config->harbor);
-	skynet_handle_init(config->harbor);
-	skynet_mq_init();
-	skynet_module_init(config->module_path);
-	skynet_timer_init();
-	skynet_socket_init();
-	skynet_profile_enable(config->profile);
 
-	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger);
-	if (ctx == NULL) {
-		fprintf(stderr, "Can't launch %s service\n", config->logservice);
+	skynet_harbor_init(config->harbor); /* toby@2022-03-10): 设置集群节点id, 不设置的话不能使用harbor机制 */
+	skynet_handle_init(config->harbor); /* toby@2022-03-10): 初始化服务句柄管理器 */
+	skynet_mq_init();                   /* toby@2022-03-10): 初始化全局消息队列 */
+	skynet_module_init(config->module_path); /* toby@2022-03-10): 初始化c模块管理器 */
+	skynet_timer_init(); /* toby@2022-03-10): 初始化时钟管理器 包含系统时间和时间轮 */
+	skynet_socket_init(); /* toby@2022-03-10): 初始化网络模块 */
+	skynet_profile_enable(config->profile); /* toby@2022-03-10): 性能检测开关 例如 打开后会记录消息处理耗时 */
+
+    /* toby@2022-03-10): 启动基础服务之日志服务 （模块名，日志文件名） */
+	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger); if (ctx == NULL) { fprintf(stderr, "Can't launch %s service\n", config->logservice);
 		exit(1);
 	}
 
 	skynet_handle_namehandle(skynet_context_handle(ctx), "logger");
 
+    /* toby@2022-03-10): 启动配置的初始服务 */
+    /* bootstrap = "c服务名 启动参数" */
 	bootstrap(ctx, config->bootstrap);
 
 	start(config->thread);
