@@ -62,9 +62,10 @@ _cb(struct skynet_context * context, void * ud, int type, int session, uint32_t 
 		lua_pushcfunction(L, traceback);
 		lua_rawgetp(L, LUA_REGISTRYINDEX, _cb);
 	} else {
+        /* toby@2022-03-14): 不需要每次都去注册表取回调函数 */
 		assert(top == 2);
 	}
-	lua_pushvalue(L,2);
+	lua_pushvalue(L,2); /* toby@2022-03-14): 压入 lua_callback 的副本，用作调用消耗 */
 
 	lua_pushinteger(L, type);
 	lua_pushlightuserdata(L, (void *)msg);
@@ -72,6 +73,7 @@ _cb(struct skynet_context * context, void * ud, int type, int session, uint32_t 
 	lua_pushinteger(L, session);
 	lua_pushinteger(L, source);
 
+    /* toby@2022-03-14): 栈上情况: 1 traceback 2 lua_callback 3 lua_callback 4~8 params */
 	r = lua_pcall(L, 5, 0 , trace);
 
 	if (r == LUA_OK) {
@@ -111,8 +113,13 @@ lcallback(lua_State *L) {
 	int forward = lua_toboolean(L, 2);
 	luaL_checktype(L,1,LUA_TFUNCTION);
 	lua_settop(L,1);
+    /* toby@2022-03-12): 将c层的回调函数注册到 注册表 t[_cb] = lua_callback
+     *  因为c层服务持有的回调函数必须具有 skynet_cb 结构
+     *  这里巧妙的用固定的 _cb, forward_cb 两个方法来间接注册lua层消息处理函数
+     * */
 	lua_rawsetp(L, LUA_REGISTRYINDEX, _cb);
 
+    /* toby@2022-03-12): 获取主虚拟机 TODO 深入了解 */
 	lua_rawgeti(L, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
 	lua_State *gL = lua_tothread(L,-1);
 
@@ -194,7 +201,7 @@ lintcommand(lua_State *L) {
 
 	result = skynet_command(context, cmd, parm);
 	if (result) {
-		char *endptr = NULL; 
+		char *endptr = NULL;
 		lua_Integer r = strtoll(result, &endptr, 0);
 		if (endptr == NULL || *endptr != '\0') {
 			// may be real number
@@ -457,13 +464,13 @@ ltrace(lua_State *L) {
 			skynet_error(context, "<TRACE %s> %" PRId64 " %s : %s:%d", tag, get_time(), user, si[0].source, si[0].line);
 			break;
 		case 2:
-			skynet_error(context, "<TRACE %s> %" PRId64 " %s : %s:%d %s:%d", tag, get_time(), user, 
+			skynet_error(context, "<TRACE %s> %" PRId64 " %s : %s:%d %s:%d", tag, get_time(), user,
 				si[0].source, si[0].line,
 				si[1].source, si[1].line
 				);
 			break;
 		case 3:
-			skynet_error(context, "<TRACE %s> %" PRId64 " %s : %s:%d %s:%d %s:%d", tag, get_time(), user, 
+			skynet_error(context, "<TRACE %s> %" PRId64 " %s : %s:%d %s:%d %s:%d", tag, get_time(), user,
 				si[0].source, si[0].line,
 				si[1].source, si[1].line,
 				si[2].source, si[2].line
@@ -517,7 +524,7 @@ luaopen_skynet_core(lua_State *L) {
 		return luaL_error(L, "Init skynet context first");
 	}
 
-
+    /* toby@2022-03-12): 为何将服务句柄专门设置为上值 */
 	luaL_setfuncs(L,l,1);
 
 	luaL_setfuncs(L,l2,0);

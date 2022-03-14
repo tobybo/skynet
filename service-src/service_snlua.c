@@ -31,7 +31,7 @@ cleardummy(lua_State *L) {
   return 0;
 }
 
-static int 
+static int
 codecache(lua_State *L) {
 	luaL_Reg l[] = {
 		{ "clear", cleardummy },
@@ -46,7 +46,7 @@ codecache(lua_State *L) {
 
 #endif
 
-static int 
+static int
 traceback (lua_State *L) {
 	const char *msg = lua_tostring(L, 1);
 	if (msg)
@@ -76,12 +76,20 @@ static int
 init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t sz) {
 	lua_State *L = l->L;
 	l->ctx = ctx;
+
+    /* toby@2022-03-11): 停止垃圾收集器 */
 	lua_gc(L, LUA_GCSTOP, 0);
+
 	lua_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
 	lua_setfield(L, LUA_REGISTRYINDEX, "LUA_NOENV");
-	luaL_openlibs(L);
+
+	luaL_openlibs(L); /* toby@2022-03-11): 在虚拟机中加载所有lua标准库 */
+
+    /* toby@2022-03-11): 将c服务句柄注册到虚拟机 */
 	lua_pushlightuserdata(L, ctx);
 	lua_setfield(L, LUA_REGISTRYINDEX, "skynet_context");
+
+    /* toby@2022-03-11): TODO 后续深入了解 */
 	luaL_requiref(L, "skynet.codecache", codecache , 0);
 	lua_pop(L,1);
 
@@ -98,25 +106,26 @@ init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t s
 	lua_pushstring(L, preload);
 	lua_setglobal(L, "LUA_PRELOAD");
 
+    /* toby@2022-03-11): 为错误信息添加堆栈 */
 	lua_pushcfunction(L, traceback);
 	assert(lua_gettop(L) == 1);
 
 	const char * loader = optstring(ctx, "lualoader", "./lualib/loader.lua");
 
-	int r = luaL_loadfile(L,loader);
+	int r = luaL_loadfile(L,loader); /* toby@2022-03-11): 仅加载 */
 	if (r != LUA_OK) {
 		skynet_error(ctx, "Can't load %s : %s", loader, lua_tostring(L, -1));
 		report_launcher_error(ctx);
 		return 1;
 	}
-	lua_pushlstring(L, args, sz);
-	r = lua_pcall(L,1,0,1);
+	lua_pushlstring(L, args, sz); /* toby@2022-03-11): args = "bootstrap" 如果有多个参数，则用空格隔开，例如 args = "bootstrap arg1 arg2" */
+	r = lua_pcall(L,1,0,1); /* toby@2022-03-11): 1 参数个数 0 返回值个数 1 错误处理函数的栈索引（traceback） */
 	if (r != LUA_OK) {
 		skynet_error(ctx, "lua loader error : %s", lua_tostring(L, -1));
 		report_launcher_error(ctx);
 		return 1;
 	}
-	lua_settop(L,0);
+	lua_settop(L,0); /* toby@2022-03-11): 移除栈上所有元素 */
 	if (lua_getfield(L, LUA_REGISTRYINDEX, "memlimit") == LUA_TNUMBER) {
 		size_t limit = lua_tointeger(L, -1);
 		l->mem_limit = limit;
@@ -126,6 +135,7 @@ init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t s
 	}
 	lua_pop(L, 1);
 
+    /* toby@2022-03-11): 重启gc */
 	lua_gc(L, LUA_GCRESTART, 0);
 
 	return 0;
@@ -135,7 +145,8 @@ static int
 launch_cb(struct skynet_context * context, void *ud, int type, int session, uint32_t source , const void * msg, size_t sz) {
 	assert(type == 0 && session == 0);
 	struct snlua *l = ud;
-	skynet_callback(context, NULL, NULL);
+	skynet_callback(context, NULL, NULL); /* toby@2022-03-11): 卸载掉instance 和 launch_cb */
+    /* toby@2022-03-11): msg = "bootstrap" */
 	int err = init_cb(l, context, msg, sz);
 	if (err) {
 		skynet_command(context, "EXIT", NULL);
@@ -149,11 +160,15 @@ snlua_init(struct snlua *l, struct skynet_context *ctx, const char * args) {
 	int sz = strlen(args);
 	char * tmp = skynet_malloc(sz);
 	memcpy(tmp, args, sz);
-	skynet_callback(ctx, l , launch_cb);
+	skynet_callback(ctx, l , launch_cb); /* toby@2022-03-11): 添加监听 */
+
+    /* toby@2022-03-11): ctx->result = ":handle_id" */
+    /*     NULL 如果换成 .xxx 则会为服务注册一个名字 xxx, 返回值也会是xxx */
 	const char * self = skynet_command(ctx, "REG", NULL);
 	uint32_t handle_id = strtoul(self+1, NULL, 16);
 	// it must be first message
-	skynet_send(ctx, 0, handle_id, PTYPE_TAG_DONTCOPY,0, tmp, sz);
+    // source = 0, session = 0, destination = handle_id（给自己发一条消息）
+	skynet_send(ctx, 0, handle_id, PTYPE_TAG_DONTCOPY, 0, tmp, sz);
 	return 0;
 }
 
