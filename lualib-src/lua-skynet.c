@@ -236,6 +236,9 @@ get_dest_string(lua_State *L, int index) {
 	return dest_string;
 }
 
+/* @source 源服务 0 会被自己的 handle 替换
+ * @idx_type 消息类型的参数位置
+ * */
 static int
 send_message(lua_State *L, int source, int idx_type) {
 	struct skynet_context * context = lua_touserdata(L, lua_upvalueindex(1));

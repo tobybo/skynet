@@ -569,7 +569,7 @@ local trace_source = {}
 local function raw_dispatch_message(prototype, msg, sz, session, source)
 	-- skynet.PTYPE_RESPONSE = 1, read skynet.h
     -- 回复消息 prototype == 1
-	if prototype == 1 then
+	if prototype == skynet.PTYPE_RESPONSE then
 		local co = session_id_coroutine[session]
 		if co == "BREAK" then
 			session_id_coroutine[session] = nil

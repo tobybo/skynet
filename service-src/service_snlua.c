@@ -9,14 +9,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define MEMORY_WARNING_REPORT (1024 * 1024 * 32)
+#define MEMORY_WARNING_REPORT (1024 * 1024 * 32) // 32M 初始内存警告阈值， 超过会打印一条日志，然后阈值翻倍
 
 struct snlua {
 	lua_State * L;
 	struct skynet_context * ctx;
 	size_t mem;
 	size_t mem_report;
-	size_t mem_limit;
+	size_t mem_limit; // 内存限制，超过这个上限，内存分配失败
 };
 
 // LUA_CACHELIB may defined in patched lua for shared proto
@@ -50,7 +50,7 @@ static int
 traceback (lua_State *L) {
 	const char *msg = lua_tostring(L, 1);
 	if (msg)
-		luaL_traceback(L, L, msg, 1);
+		luaL_traceback(L, L, msg, 1); // 附加调用堆栈信息
 	else {
 		lua_pushliteral(L, "(no error message)");
 	}

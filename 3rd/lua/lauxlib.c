@@ -1208,7 +1208,7 @@ LUAMOD_API int luaopen_cache(lua_State *L) {
 		{ "mode", cache_mode },
 		{ NULL, NULL },
 	};
-	luaL_newlib(L,l);
+	luaL_newlib(L,l); // 创建一张新表，把 l 中的函数注册进去
 	lua_getglobal(L, "loadfile");
 	lua_setfield(L, -2, "loadfile");
 	return 1;
