@@ -2,6 +2,7 @@
 -- See config
 
 --print("PRELOAD", ...)
-dofile("script/tools/tool.lua")
+package.path = "./script/?.lua;"..package.path
+require("tools/tool_log")
 
 

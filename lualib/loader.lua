@@ -11,7 +11,8 @@ end
 
 SERVICE_NAME = args[1] --(toby@2022-03-11): "bootstrap"
 
-local main, pattern
+local main, pattern, old_pattern, old_lua_service
+old_lua_service = LUA_SERVICE
 
 local err = {}
 for pat in string.gmatch(LUA_SERVICE, "([^;]+);*") do
@@ -22,6 +23,7 @@ for pat in string.gmatch(LUA_SERVICE, "([^;]+);*") do
 	else
 		pattern = pat --(toby@2022-03-12): "./service/?.lua"
 		main = f      --(toby@2022-03-12): loadfile("bootstrap.lua") 的返回值
+        old_pattern = pattern
 		break
 	end
 end
@@ -62,3 +64,4 @@ end
 _G.require = (require "skynet.require").require
 
 main(select(2, table.unpack(args)))
+--LOG("loader, pattern,%s, luapath,%s, newpt,%s, pkgpath,%s", old_pattern, old_lua_service, pattern, package.path)
