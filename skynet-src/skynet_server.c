@@ -46,13 +46,13 @@ struct skynet_context {
 	void * cb_ud;                       /* toby@2022-03-04): 自定义数据内容 */
 	skynet_cb cb;                       /* toby@2022-03-04): 消息处理函数 */
 	struct message_queue *queue;        /* toby@2022-03-04): 消息队列 */
-	FILE * logfile;
+	ATOM_POINTER logfile;
 	uint64_t cpu_cost;	// in microsec
 	uint64_t cpu_start;	// in microsec
 	char result[32];
 	uint32_t handle;                    /* toby@2022-03-04): 服务id */
 	int session_id;
-	int ref;                            /* toby@2022-03-04): 引用计数 */
+	ATOM_INT ref;                            /* toby@2022-03-04): 引用计数 */
 	int message_count;
 	bool init;
 	bool endless;
