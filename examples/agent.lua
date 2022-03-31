@@ -94,6 +94,7 @@ end
 
 skynet.start(function()
 	skynet.dispatch("lua", function(_,_, command, ...)
+        skynet.error(string.format("agent receive msg, command,%s", command))
 		skynet.trace()
 		local f = CMD[command]
 		skynet.ret(skynet.pack(f(...)))

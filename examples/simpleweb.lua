@@ -61,6 +61,7 @@ skynet.start(function()
 		end
 		-- limit request body size to 8192 (you can pass nil to unlimit)
 		local code, url, method, header, body = httpd.read_request(interface.read, 8192)
+        INFO("[web], callback, code,%s, url,%s", code, url)
 		if code then
 			if code ~= 200 then
 				response(id, interface.write, code)
