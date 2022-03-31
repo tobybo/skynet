@@ -11,14 +11,19 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
 
+#include "skynet.h"
 #include "skynet_socket.h"
 
 #define BACKLOG 32
 // 2 ** 12 == 4096
 #define LARGE_PAGE_NODE 12
+#define POOL_SIZE_WARNING 32
 #define BUFFER_LIMIT (256 * 1024)
 
 struct buffer_node {
@@ -51,7 +56,7 @@ lfreepool(lua_State *L) {
 
 static int
 lnewpool(lua_State *L, int sz) {
-	struct buffer_node * pool = lua_newuserdata(L, sizeof(struct buffer_node) * sz);
+	struct buffer_node * pool = lua_newuserdatauv(L, sizeof(struct buffer_node) * sz, 0);
 	int i;
 	for (i=0;i<sz;i++) {
 		pool[i].msg = NULL;
@@ -69,7 +74,7 @@ lnewpool(lua_State *L, int sz) {
 
 static int
 lnewbuffer(lua_State *L) {
-	struct socket_buffer * sb = lua_newuserdata(L, sizeof(*sb));	
+	struct socket_buffer * sb = lua_newuserdatauv(L, sizeof(*sb), 0);
 	sb->size = 0;
 	sb->offset = 0;
 	sb->head = NULL;
@@ -124,6 +129,9 @@ lpushbuffer(lua_State *L) {
 		lnewpool(L, size);	
 		free_node = lua_touserdata(L,-1);
 		lua_rawseti(L, pool_index, tsz+1);
+		if (tsz > POOL_SIZE_WARNING) {
+			skynet_error(NULL, "Too many socket pool (%d)", tsz);
+		}
 	}
 	lua_pushlightuserdata(L, free_node->next);	
 	lua_rawseti(L, pool_index, 1);	// sb poolt msg size
@@ -179,7 +187,7 @@ pop_lstring(lua_State *L, struct socket_buffer *sb, int sz, int skip) {
 	}
 
 	luaL_Buffer b;
-	luaL_buffinit(L, &b);
+	luaL_buffinitsize(L, &b, sz);
 	for (;;) {
 		int bytes = current->sz - sb->offset;
 		if (bytes >= sz) {
@@ -612,6 +620,14 @@ lstart(lua_State *L) {
 }
 
 static int
+lpause(lua_State *L) {
+	struct skynet_context * ctx = lua_touserdata(L, lua_upvalueindex(1));
+	int id = luaL_checkinteger(L, 1);
+	skynet_socket_pause(ctx,id);
+	return 0;
+}
+
+static int
 lnodelay(lua_State *L) {
 	struct skynet_context * ctx = lua_touserdata(L, lua_upvalueindex(1));
 	int id = luaL_checkinteger(L, 1);
@@ -729,6 +745,9 @@ getinfo(lua_State *L, struct socket_info *si) {
 	case SOCKET_INFO_BIND:
 		lua_pushstring(L, "BIND");
 		break;
+	case SOCKET_INFO_CLOSING:
+		lua_pushstring(L, "CLOSING");
+		break;
 	default:
 		lua_pushstring(L, "UNKNOWN");
 		lua_setfield(L, -2, "type");
@@ -745,6 +764,10 @@ getinfo(lua_State *L, struct socket_info *si) {
 	lua_setfield(L, -2, "rtime");
 	lua_pushinteger(L, si->wtime);
 	lua_setfield(L, -2, "wtime");
+	lua_pushboolean(L, si->reading);
+	lua_setfield(L, -2, "reading");
+	lua_pushboolean(L, si->writing);
+	lua_setfield(L, -2, "writing");
 	if (si->name[0]) {
 		lua_pushstring(L, si->name);
 		lua_setfield(L, -2, "peer");
@@ -763,6 +786,34 @@ linfo(lua_State *L) {
 		temp = temp->next;
 	}
 	socket_info_release(si);
+	return 1;
+}
+
+static int
+lresolve(lua_State *L) {
+	const char * host = luaL_checkstring(L, 1);
+	int status;
+	struct addrinfo ai_hints;
+	struct addrinfo *ai_list = NULL;
+	struct addrinfo *ai_ptr = NULL;
+	memset( &ai_hints, 0, sizeof( ai_hints ) );
+	status = getaddrinfo( host, NULL, &ai_hints, &ai_list);
+	if ( status != 0 ) {
+		return luaL_error(L, gai_strerror(status));
+	}
+	lua_newtable(L);
+	int idx = 1;
+	char tmp[128];
+	for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next ) {
+		struct sockaddr * addr = ai_ptr->ai_addr;
+		void * sin_addr = (ai_ptr->ai_family == AF_INET) ? (void*)&((struct sockaddr_in *)addr)->sin_addr : (void*)&((struct sockaddr_in6 *)addr)->sin6_addr;
+		if (inet_ntop(ai_ptr->ai_family, sin_addr, tmp, sizeof(tmp))) {
+			lua_pushstring(L, tmp);
+			lua_rawseti(L, -2, idx++);
+		}
+	}
+
+	freeaddrinfo(ai_list);
 	return 1;
 }
 
@@ -794,11 +845,13 @@ luaopen_skynet_socketdriver(lua_State *L) {
 		{ "lsend", lsendlow },
 		{ "bind", lbind },
 		{ "start", lstart },
+		{ "pause", lpause },
 		{ "nodelay", lnodelay },
 		{ "udp", ludp },
 		{ "udp_connect", ludp_connect },
 		{ "udp_send", ludp_send },
 		{ "udp_address", ludp_address },
+		{ "resolve", lresolve },
 		{ NULL, NULL },
 	};
 	lua_getfield(L, LUA_REGISTRYINDEX, "skynet_context");

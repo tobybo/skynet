@@ -182,6 +182,7 @@ _ltls_context_handshake(lua_State* L) {
             return 0;
         } else if (ret < 0) {
             int err = SSL_get_error(tls_p->ssl, ret);
+            ERR_clear_error();
             if(err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 int all_read = _bio_read(L, tls_p);
                 if(all_read>0) {
@@ -192,6 +193,7 @@ _ltls_context_handshake(lua_State* L) {
             }
         } else {
             int err = SSL_get_error(tls_p->ssl, ret);
+            ERR_clear_error();
             luaL_error(L, "SSL_do_handshake error:%d ret:%d", err, ret);
         }
     }
@@ -219,6 +221,7 @@ _ltls_context_read(lua_State* L) {
         read = SSL_read(tls_p->ssl, outbuff, sizeof(outbuff));
         if(read <= 0) {
             int err = SSL_get_error(tls_p->ssl, read);
+            ERR_clear_error();
             if(err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 break;
             }
@@ -244,6 +247,7 @@ _ltls_context_write(lua_State* L) {
         int written = SSL_write(tls_p->ssl, unencrypted_data,  slen);
         if(written <= 0) {
             int err = SSL_get_error(tls_p->ssl, written);
+            ERR_clear_error();
             luaL_error(L, "SSL_write error:%d", err);
         }else if(written <= slen) {
             unencrypted_data += written;
@@ -317,7 +321,7 @@ _lctx_ciphers(lua_State* L) {
 
 static int
 lnew_ctx(lua_State* L) {
-    struct ssl_ctx* ctx_p = (struct ssl_ctx*)lua_newuserdata(L, sizeof(*ctx_p));
+    struct ssl_ctx* ctx_p = (struct ssl_ctx*)lua_newuserdatauv(L, sizeof(*ctx_p), 0);
     ctx_p->ctx = SSL_CTX_new(SSLv23_method());
     if(!ctx_p->ctx) {
         unsigned int err = ERR_get_error();
@@ -345,15 +349,19 @@ lnew_ctx(lua_State* L) {
 
 static int
 lnew_tls(lua_State* L) {
-    struct tls_context* tls_p = (struct tls_context*)lua_newuserdata(L, sizeof(*tls_p));
+    struct tls_context* tls_p = (struct tls_context*)lua_newuserdatauv(L, sizeof(*tls_p), 1);
     tls_p->is_close = false;
     const char* method = luaL_optstring(L, 1, "nil");
     struct ssl_ctx* ctx_p = _check_sslctx(L, 2);
     lua_pushvalue(L, 2);
-    lua_setuservalue(L, -2); // set ssl_ctx associated to tls_context
+    lua_setiuservalue(L, -2, 1); // set ssl_ctx associated to tls_context
 
     if(strcmp(method, "client") == 0) {
         _init_client_context(L, tls_p, ctx_p);
+        if (!lua_isnoneornil(L, 3)) {
+            const char* hostname = luaL_checkstring(L, 3);
+            SSL_set_tlsext_host_name(tls_p->ssl, hostname);
+        }
     }else if(strcmp(method, "server") == 0) {
         _init_server_context(L, tls_p, ctx_p);
     } else {
@@ -378,9 +386,11 @@ lnew_tls(lua_State* L) {
     return 1;
 }
 
-
 int
 luaopen_ltls_c(lua_State* L) {
+    if(!TLS_IS_INIT) {
+        luaL_error(L, "ltls need init, Put enablessl = true in you config file.");
+    }
     luaL_Reg l[] = {
         {"newctx", lnew_ctx},
         {"newtls", lnew_tls},
@@ -391,18 +401,24 @@ luaopen_ltls_c(lua_State* L) {
     return 1;
 }
 
-void __attribute__((constructor)) ltls_init(void) {
+// for ltls init
+static int
+ltls_init_constructor(lua_State* L) {
 #ifndef OPENSSL_EXTERNAL_INITIALIZATION
-    SSL_library_init();
-    SSL_load_error_strings();
-    ERR_load_BIO_strings();
-    OpenSSL_add_all_algorithms();
-    TLS_IS_INIT = true;
+    if(!TLS_IS_INIT) {
+        SSL_library_init();
+        SSL_load_error_strings();
+        ERR_load_BIO_strings();
+        OpenSSL_add_all_algorithms();
+    }
 #endif
+    TLS_IS_INIT = true;
+    return 0;
 }
 
-
-void __attribute__((destructor)) ltls_destory(void) {
+static int
+ltls_init_destructor(lua_State* L) {
+#ifndef OPENSSL_EXTERNAL_INITIALIZATION
     if(TLS_IS_INIT) {
         ENGINE_cleanup();
         CONF_modules_unload(1);
@@ -411,4 +427,19 @@ void __attribute__((destructor)) ltls_destory(void) {
         sk_SSL_COMP_free(SSL_COMP_get_compression_methods());
         CRYPTO_cleanup_all_ex_data();
     }
+#endif
+    TLS_IS_INIT = false;
+    return 0;
+}
+
+int
+luaopen_ltls_init_c(lua_State* L) {
+    luaL_Reg l[] = {
+        {"constructor", ltls_init_constructor},
+        {"destructor", ltls_init_destructor},
+        {NULL, NULL},
+    };
+    luaL_checkversion(L);
+    luaL_newlib(L, l);
+    return 1;
 }

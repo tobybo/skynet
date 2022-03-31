@@ -165,25 +165,25 @@ local function _set_byte2(n)
     return strpack("<I2", n)
 end
 
-local function _set_byte3(n)
-    return strpack("<I3", n)
-end
+-- local function _set_byte3(n)
+--     return strpack("<I3", n)
+-- end
 
-local function _set_byte4(n)
-    return strpack("<I4", n)
-end
+-- local function _set_byte4(n)
+--     return strpack("<I4", n)
+-- end
 
-local function _set_byte8(n)
-    return strpack("<I8", n)
-end
+-- local function _set_byte8(n)
+--     return strpack("<I8", n)
+-- end
 
 local function _set_int8(n)
     return strpack("<i8", n)
 end
 
-local function _set_float(n)
-    return strpack("<f", n)
-end
+-- local function _set_float(n)
+--     return strpack("<f", n)
+-- end
 
 local function _set_double(n)
     return strpack("<d", n)
@@ -193,12 +193,12 @@ local function _from_cstring(data, i)
     return strunpack("z", data, i)
 end
 
-local function _dumphex(bytes)
-    return strgsub(bytes, ".",
-        function(x)
-            return strformat("%02x ", strbyte(x))
-        end)
-end
+-- local function _dumphex(bytes)
+--     return strgsub(bytes, ".",
+--         function(x)
+--             return strformat("%02x ", strbyte(x))
+--         end)
+-- end
 
 local function _compute_token(password, scramble)
     if password == "" then
@@ -560,8 +560,12 @@ local store_types = {
     end
 }
 
+store_types["nil"] = function(v)
+    return _set_byte2(0x06), ""
+end
+
 local function _compose_stmt_execute(self, stmt, cursor_type, args)
-    local arg_num = #args
+    local arg_num = args.n
     if arg_num ~= stmt.param_count then
         error("require stmt.param_count " .. stmt.param_count .. " get arg_num " .. arg_num)
     end
@@ -570,20 +574,38 @@ local function _compose_stmt_execute(self, stmt, cursor_type, args)
 
     local cmd_packet = strpack("<c1I4BI4", COM_STMT_EXECUTE, stmt.prepare_id, cursor_type, 0x01)
     if arg_num > 0 then
-        local null_count = (arg_num + 7) // 8
         local f, ts, vs
         local types_buf = ""
         local values_buf = ""
-        for _, v in pairs(args) do
+        --生成NULL位图
+        local null_count = (arg_num + 7) // 8
+        local null_map = ""
+        local field_index = 1
+        for i = 1, null_count do
+            local byte = 0
+            for j = 0, 7 do
+                if field_index < arg_num then
+                    if args[field_index] == nil then
+                        byte = byte | (1 << j)
+                    else
+                        byte = byte | (0 << j)
+                    end
+                end
+                field_index = field_index + 1
+            end
+            null_map = null_map .. strchar(byte)
+        end
+        for i = 1, arg_num do
+            local v = args[i]
             f = store_types[type(v)]
             if not f then
-                error("invalid parameter type", type(v))
+                error("invalid parameter type " .. type(v))
             end
             ts, vs = f(v)
             types_buf = types_buf .. ts
             values_buf = values_buf .. vs
         end
-        cmd_packet = cmd_packet .. strrep("\0", null_count) .. strchar(0x01) .. types_buf .. values_buf
+        cmd_packet = cmd_packet .. null_map .. strchar(0x01) .. types_buf .. values_buf
     end
 
     return _compose_packet(self, cmd_packet)
@@ -719,7 +741,7 @@ function _M.connect(opts)
     local user = opts.user or ""
     local password = opts.password or ""
     local charset = CHARSET_MAP[opts.charset or "_default"]
-    local channel = 
+    local channel =
         socketchannel.channel {
         host = opts.host,
         port = opts.port or 3306,
@@ -840,6 +862,7 @@ local _binary_parser = {
     [0x0c] = _get_datetime,
     [0x0f] = _from_length_coded_str,
     [0x10] = _from_length_coded_str,
+    [0xf5] = _from_length_coded_str,
     [0xf9] = _from_length_coded_str,
     [0xfa] = _from_length_coded_str,
     [0xfb] = _from_length_coded_str,
@@ -924,7 +947,7 @@ local function read_execute_result(self, sock)
 
     -- typ == 'DATA'
 
-    local field_count, extra = _parse_result_set_header_packet(packet)
+    -- local field_count, extra = _parse_result_set_header_packet(packet)
 
     local cols = {}
     local col
@@ -1011,21 +1034,7 @@ end
         err
 ]]
 function _M.execute(self, stmt, ...)
-    -- 检查参数，不能为nil
-    local p_n = select('#', ...)
-    local p_v
-    for i = 1, p_n do
-        p_v = select(i, ...)
-        if p_v == nil then
-            return {
-                badresult = true,
-                errno = 30902,
-                err = "parameter " .. i .. " is nil"
-            }
-        end
-    end
-
-    local querypacket, er = _compose_stmt_execute(self, stmt, CURSOR_TYPE_NO_CURSOR, {...})
+    local querypacket, er = _compose_stmt_execute(self, stmt, CURSOR_TYPE_NO_CURSOR, table.pack(...))
     if not querypacket then
         return {
             badresult = true,

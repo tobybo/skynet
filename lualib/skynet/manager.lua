@@ -1,18 +1,31 @@
 local skynet = require "skynet"
 local c = require "skynet.core"
 
+local function number_address(name)
+	local t = type(name)
+	if t == "number" then
+		return name
+	elseif t == "string" then
+		local hex = name:match "^:(%x+)"
+		if hex then
+			return tonumber(hex, 16)
+		end
+	end
+end
+
 function skynet.launch(...)
     -- skynet.launch("snlua","launcher")
 	local addr = c.command("LAUNCH", table.concat({...}," "))
 	if addr then
-		return tonumber("0x" .. string.sub(addr , 2))
+		return tonumber(string.sub(addr , 2), 16)
 	end
 end
 
 function skynet.kill(name)
-	if type(name) == "number" then
-		skynet.send(".launcher","lua","REMOVE",name, true)
-		name = skynet.address(name)
+	local addr = number_address(name)
+	if addr then
+		skynet.send(".launcher","lua","REMOVE", addr, true)
+		name = skynet.address(addr)
 	end
 	c.command("KILL",name)
 end
@@ -28,7 +41,7 @@ local function globalname(name, handle)
 		return false
 	end
 
-	assert(#name <= 16)	-- GLOBALNAME_LENGTH is 16, defined in skynet_harbor.h
+	assert(#name < 16)	-- GLOBALNAME_LENGTH is 16, defined in skynet_harbor.h
 	assert(tonumber(name) == nil)	-- global name can't be number
 
 	local harbor = require "skynet.harbor"

@@ -92,6 +92,30 @@ local function sharetable_service()
 		skynet.ret(skynet.pack(ptr))
 	end
 
+	local function querylist(source, filenamelist)
+		local ptrList = {}
+        for _, filename in ipairs(filenamelist) do
+            if files[filename] then
+                ptrList[filename] = query_file(source, filename)
+            end
+        end
+		return ptrList
+	end
+
+	local function queryall(source)
+		local ptrList = {}
+		for filename in pairs(files) do
+			ptrList[filename] = query_file(source, filename)
+		end
+		return ptrList
+	end
+
+    function sharetable.queryall(source, filenamelist)
+		local queryFunc = filenamelist and querylist or queryall
+		local ptrList = queryFunc(source, filenamelist)
+        skynet.ret(skynet.pack(ptrList))
+    end
+
 	function sharetable.close(source)
 		local list = clients[source]
 		if list then
@@ -208,6 +232,21 @@ function sharetable.query(filename)
 	end
 end
 
+function sharetable.queryall(filenamelist)
+    local list, t, map = {}
+    local ptrList = skynet.call(sharetable.address, "lua", "queryall", filenamelist)
+    for filename, ptr in pairs(ptrList) do
+        t = core.clone(ptr)
+        map = RECORD[filename]
+        if not map then
+            map = {}
+            RECORD[filename] = map
+        end
+        map[t] = true
+        list[filename] = t
+    end
+    return list
+end
 
 local pairs = pairs
 local type = type
@@ -257,20 +296,15 @@ local function resolve_replace(replace_map)
     end
 
     local function match_value(v)
-        assert(v ~= nil)
-        if v == RECORD then
+        if v == nil or record_map[v] or is_sharedtable(v) then
             return
         end
 
         local tv = type(v)
         local f = match[tv]
-        if record_map[v] or is_sharedtable(v) then
-            return
-        end
-
         if f then
             record_map[v] = true
-            f(v)
+            return f(v)
         end
     end
 
@@ -282,7 +316,7 @@ local function resolve_replace(replace_map)
                 nv = getnv(mt)
                 debug.setmetatable(v, nv)
             else
-                match_value(mt)
+                return match_value(mt)
             end
         end
     end
@@ -299,7 +333,7 @@ local function resolve_replace(replace_map)
         for _,v in pairs(internal_types) do
             match_mt(v)
         end
-        match_mt(nil)
+        return match_mt(nil)
     end
 
 
@@ -336,7 +370,7 @@ local function resolve_replace(replace_map)
                 end
             end
         end
-        match_mt(t)
+        return match_mt(t)
     end
 
     local function match_userdata(u)
@@ -346,7 +380,7 @@ local function resolve_replace(replace_map)
             nv = getnv(uv)
             setuservalue(u, nv)
         end
-        match_mt(u)
+        return match_mt(u)
     end
 
     local function match_funcinfo(info)
@@ -364,7 +398,7 @@ local function resolve_replace(replace_map)
         end
 
         local level = info.level
-        local curco = info.curco or coroutine.running()
+        local curco = info.curco
         if not level then
             return
         end
@@ -386,46 +420,43 @@ local function resolve_replace(replace_map)
 
     local function match_function(f)
         local info = getinfo(f, "uf")
-        match_funcinfo(info)
+        return match_funcinfo(info)
     end
 
-    local stack_values_tmp = {}
-    local function match_thread(co)
+    local function match_thread(co, level)
         -- match stackvalues
-        local n = stackvalues(co, stack_values_tmp)
+        local values = {}
+        local n = stackvalues(co, values)
         for i=1,n do
-            local v = stack_values_tmp[i]
-            stack_values_tmp[i] = nil
+            local v = values[i]
             match_value(v)
         end
 
-        -- match callinfo
-        local level = 1
-        -- jump the fucntion from sharetable.update to top
-        local is_self = coroutine.running() == co
-        if is_self then
-            while true do
-                local info = getinfo(co, level, "uf")
-                level = level + 1
-                if not info then
-                    level = 1
-                    break
-                elseif info.func == sharetable.update then
-                    break
-                end
-            end
-        end
-
+        local uplevel = co == coroutine.running() and 1 or 0
+        level = level or 1
         while true do
             local info = getinfo(co, level, "uf")
             if not info then
                 break
             end
-            info.level = is_self and level + 1 or level
+            info.level = level + uplevel
             info.curco = co
             match_funcinfo(info)
             level = level + 1
         end
+    end
+
+    local function prepare_match()
+        local co = coroutine.running()
+        record_map[co] = true
+        record_map[match] = true
+        record_map[RECORD] = true
+        record_map[record_map] = true
+        record_map[replace_map] = true
+        record_map[insert_replace] = true
+        record_map[resolve_replace] = true
+        assert(getinfo(co, 3, "f").func == sharetable.update)
+        match_thread(co, 5) -- ignore match_thread and match_funcinfo frame
     end
 
     match["table"] = match_table
@@ -433,6 +464,7 @@ local function resolve_replace(replace_map)
     match["userdata"] = match_userdata
     match["thread"] = match_thread
 
+    prepare_match()
     match_internmt()
 
     local root = debug.getregistry()
@@ -458,7 +490,7 @@ function sharetable.update(...)
 	end
 
     if next(replace_map) then
-	   resolve_replace(replace_map)
+        resolve_replace(replace_map)
     end
 end
 
