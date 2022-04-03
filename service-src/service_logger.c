@@ -54,33 +54,37 @@ logger_cb(struct skynet_context * context, void *ud, int type, int session, uint
 		}
 		break;
 	case PTYPE_TEXT:
-		if (inst->filename) {
-			char tmp[SIZETIMEFMT];
-			int csec = timestring(ud, tmp);
-			fprintf(inst->handle, "%s.%02d ", tmp, csec);
-
-            fprintf(inst->handle, "[:%08x] ", source);
-            fwrite(msg, sz , 1, inst->handle);
-            fprintf(inst->handle, "\n");
-            fflush(inst->handle);
-		} else {
-            /* toby@2022-03-31): 输出到控制台 */
+        {
             int offset = 0;
             const char* _msg = msg;
             if (sz > 3 && _msg[0] == ')') {
-                int color = (_msg[1]-'0')*10 + _msg[2]-'0';
                 offset = 3;
-                fprintf(inst->handle, "\e[%dm", color);
             }
-            fprintf(inst->handle, "[:%08x] ", source);
-            fwrite(msg + offset, sz - offset, 1, inst->handle);
-            fprintf(inst->handle, "\n");
-            if (offset) {
-                fprintf(inst->handle, "\e[0m");
+            if (inst->filename) {
+                char tmp[SIZETIMEFMT];
+                int csec = timestring(ud, tmp);
+                fprintf(inst->handle, "%s.%02d ", tmp, csec);
+
+                fprintf(inst->handle, "[:%08x] ", source);
+                fwrite(msg + offset, sz - offset, 1, inst->handle);
+                fprintf(inst->handle, "\n");
+                fflush(inst->handle);
+            } else {
+                /* toby@2022-03-31): 输出到控制台 */
+                if (offset) {
+                    int color = (_msg[1]-'0')*10 + _msg[2]-'0';
+                    fprintf(inst->handle, "\e[%dm", color);
+                }
+                fprintf(inst->handle, "[:%08x] ", source);
+                fwrite(msg + offset, sz - offset, 1, inst->handle);
+                fprintf(inst->handle, "\n");
+                if (offset) {
+                    fprintf(inst->handle, "\e[0m");
+                }
+                fflush(inst->handle);
             }
-            fflush(inst->handle);
+            break;
         }
-		break;
 	}
 
 	return 0;
