@@ -229,16 +229,24 @@ skynet.start(function()
 	local master_addr = skynet.getenv "master"
 	local harbor_id = tonumber(skynet.getenv "harbor")
 	local slave_address = assert(skynet.getenv "address")
+
+    -- 1. 创建 slave 的监听套接字，用于等会接纳其他已经开启的节点发起的连接
 	local slave_fd = socket.listen(slave_address)
 	skynet.error("slave connect to master " .. tostring(master_addr))
+
+    -- 2. 连接 master
 	local master_fd = assert(socket.open(master_addr), "Can't connect to master")
 
+    -- 3. 注册服务消息类型为 lua 的处理函数
+    --      REGISTER 注册本地服务为全局服务
 	skynet.dispatch("lua", function (_,_,command,...)
 		local f = assert(harbor[command])
 		f(master_fd, ...)
 	end)
+    -- 4. 注册服务消息类型为 text 的处理函数
 	skynet.dispatch("text", monitor_harbor(master_fd))
 
+    -- 5. 启动 harbor 服务
 	harbor_service = assert(skynet.launch("harbor", harbor_id, skynet.self()))
 
 	local hs_message = pack_package("H", harbor_id, slave_address)
