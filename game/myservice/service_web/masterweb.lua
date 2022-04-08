@@ -103,17 +103,16 @@ end)
 else
 
 skynet.start(function()
-	local agent = {}
-	local protocol = "http"
-	for i= 1, 20 do
-		agent[i] = skynet.newservice(SERVICE_NAME, "agent", protocol)
-	end
 	local balance = 1
 	local id = socket.listen("0.0.0.0", 8001)
-	skynet.error(string.format("Listen web port 8001 protocol:%s", protocol))
+	LOG("Listen web port 8001 protocol:%s", protocol)
 	socket.start(id , function(id, addr)
-		skynet.error(string.format("%s connected, pass it to agent :%08x", addr, agent[balance]))
+        -- 1. 从 master 服务获取 game 节点的 agent 服务地址
+        -- 2. 向 game 节点的 agent 服务发送消息
+
+		LOG("%s connected, pass it to agent :%08x", addr, agent[balance])
 		skynet.send(agent[balance], "lua", id)
+
 		balance = balance + 1
 		if balance > #agent then
 			balance = 1

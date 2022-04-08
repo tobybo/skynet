@@ -49,7 +49,7 @@ flags = [
 '-isystem',
 '/usr/local/include',
 '-isystem',
-'/opt/rh/devtoolset-10/root/usr/lib/gcc/x86_64-redhat-linux/10/include',
+'/opt/rh/devtoolset-9/root/usr/lib/gcc/x86_64-redhat-linux/9/include',
 '-isystem',
 '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/c++/v1',
 '-isystem',
