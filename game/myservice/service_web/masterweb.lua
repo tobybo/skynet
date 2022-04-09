@@ -9,7 +9,7 @@ local string = string
 local mode, protocol = ...
 protocol = protocol or "http"
 
-if mode == "agent" then
+if mode == "gate" then
 
 local function response(id, write, ...)
 	local ok, err = httpd.write_response(write, ...)
@@ -52,6 +52,8 @@ local function gen_interface(protocol, fd)
 	end
 end
 
+game_svr_addr = game_svr_addr
+
 skynet.start(function()
 	skynet.dispatch("lua", function (_,_,id)
 		socket.start(id)
@@ -61,31 +63,20 @@ skynet.start(function()
 		end
 		-- limit request body size to 8192 (you can pass nil to unlimit)
 		local code, url, method, header, body = httpd.read_request(interface.read, 8192)
-        LOG("callback, code,%s, url,%s", code, url)
+        -- 1. 拿到 game 服务的地址
+        --   发消息给 .cslave 获取地址
+        -- 2. 将 http 消息内容转发给 game
+        -- 3. 将 game 回复的内容转发给 client
+        LOG("find game_addr from slave begin")
+        if not game_svr_addr then
+            game_svr_addr = skynet.call(".cslave", "lua", "QUERYNAME", "game")
+        end
+        LOG("find game_addr from slave, game_addr,%s", game_svr_addr)
+        local code, msg = skynet.call(game_svr_addr, "lua", code, url, method, header, body)
+        --skynet.wait()
         LOG("callback, code,%s, url,%s", code, url)
 		if code then
-			if code ~= 200 then
-				response(id, interface.write, code)
-			else
-				local tmp = {}
-				if header.host then
-					table.insert(tmp, string.format("host: %s", header.host))
-				end
-				local path, query = urllib.parse(url)
-				table.insert(tmp, string.format("path: %s", path))
-				if query then
-					local q = urllib.parse_query(query)
-					for k, v in pairs(q) do
-						table.insert(tmp, string.format("query: %s= %s", k,v))
-					end
-				end
-				table.insert(tmp, "-----header----")
-				for k,v in pairs(header) do
-					table.insert(tmp, string.format("%s = %s",k,v))
-				end
-				table.insert(tmp, "-----body----\n" .. body)
-				response(id, interface.write, code, table.concat(tmp,"\n"))
-			end
+		    response(id, interface.write, code, msg)
 		else
 			if url == sockethelper.socket_error then
 				skynet.error("socket closed")
@@ -103,16 +94,17 @@ end)
 else
 
 skynet.start(function()
+	local agent = {}
+	local protocol = "http"
+	for i= 1, 20 do
+		agent[i] = skynet.newservice(SERVICE_NAME, "gate", protocol)
+	end
 	local balance = 1
 	local id = socket.listen("0.0.0.0", 8001)
-	LOG("Listen web port 8001 protocol:%s", protocol)
+	skynet.error(string.format("Listen web port 8001 protocol:%s", protocol))
 	socket.start(id , function(id, addr)
-        -- 1. 从 master 服务获取 game 节点的 agent 服务地址
-        -- 2. 向 game 节点的 agent 服务发送消息
-
-		LOG("%s connected, pass it to agent :%08x", addr, agent[balance])
+		skynet.error(string.format("%s connected, pass it to agent :%08x", addr, agent[balance]))
 		skynet.send(agent[balance], "lua", id)
-
 		balance = balance + 1
 		if balance > #agent then
 			balance = 1

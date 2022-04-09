@@ -172,6 +172,7 @@ local function monitor_harbor(master_fd)
 end
 
 function harbor.REGISTER(fd, name, handle)
+    LOG("harbor register, name,%s, handle,%s", name, handle)
 	assert(globalname[name] == nil)
 	globalname[name] = handle
 	response_name(name)
@@ -206,15 +207,19 @@ function harbor.CONNECT(fd, id)
 end
 
 function harbor.QUERYNAME(fd, name)
+    LOG("queryname begin, name,%s", name)
 	if name:byte() == 46 then	-- "." , local name
+        LOG("queryname begin 1, name,%s", name)
 		skynet.ret(skynet.pack(skynet.localname(name)))
 		return
 	end
 	local result = globalname[name]
 	if result then
+        LOG("queryname begin 2, name,%s", name)
 		skynet.ret(skynet.pack(result))
 		return
 	end
+    LOG("queryname begin 3, name,%s", name)
 	local queue = queryname[name]
 	if queue == nil then
 		socket.write(fd, pack_package("Q", name))
