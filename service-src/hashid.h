@@ -108,7 +108,7 @@ hashid_insert(struct hashid * hi, int id) {
 		c->next = hi->hash[h];
 	}
 	hi->hash[h] = c;
-	
+
 	return c - hi->id;
 }
 

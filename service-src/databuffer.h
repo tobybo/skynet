@@ -31,9 +31,9 @@ struct messagepool {
 	struct message * freelist;
 };
 
-// use memset init struct 
+// use memset init struct
 
-static void 
+static void
 messagepool_free(struct messagepool *pool) {
 	struct messagepool_list *p = pool->pool;
 	while(p) {
@@ -112,7 +112,7 @@ databuffer_push(struct databuffer *db, struct messagepool *mp, void *data, int s
 	m->buffer = data;
 	m->size = sz;
 	m->next = NULL;
-	db->size += sz;
+	db->size += sz;  // 累计 databuffer 长度
 	if (db->head == NULL) {
 		assert(db->tail == NULL);
 		db->head = db->tail = m;

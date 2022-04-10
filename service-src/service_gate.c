@@ -14,20 +14,21 @@
 
 struct connection {
 	int id;	// skynet_socket id
-	uint32_t agent;
-	uint32_t client;
+	uint32_t agent;           // agent 服务地址
+	uint32_t client;          // client 服务地址
 	char remote_name[32];
-	struct databuffer buffer;
+	struct databuffer buffer; // 数据包队列
 };
 
 struct gate {
 	struct skynet_context *ctx;
 	int listen_id;
-	uint32_t watchdog;
-	uint32_t broker;
-	int client_tag;
-	int header_size;
-	int max_connection;
+	uint32_t watchdog; // 服务地址
+	uint32_t broker;   // 服务地址
+    int game_id;       // 服务器连接 id
+	int client_tag;    // 消息类型
+	int header_size;   // 包头长度
+	int max_connection; // 连接池数量
 	struct hashid hash;
 	struct connection *conn;
 	// todo: save message pool ptr for release
@@ -328,7 +329,7 @@ start_listen(struct gate *g, char * listen_addr) {
 			skynet_error(ctx, "Invalid gate address %s",listen_addr);
 			return 1;
 		}
-		portstr[0] = '\0';
+		portstr[0] = '\0'; // 切割 ip 地址和端口
 		host = listen_addr;
 	}
 	g->listen_id = skynet_socket_listen(ctx, host, port, BACKLOG);
@@ -350,7 +351,7 @@ gate_init(struct gate *g , struct skynet_context * ctx, char * parm) {
 	int client_tag = 0;
 	char header;
 	int n = sscanf(parm, "%c %s %s %d %d", &header, watchdog, binding, &client_tag, &max);
-	if (n<4) {
+	if (n<5) {
 		skynet_error(ctx, "Invalid gate parm %s",parm);
 		return 1;
 	}
@@ -386,7 +387,7 @@ gate_init(struct gate *g , struct skynet_context * ctx, char * parm) {
 	for (i=0;i<max;i++) {
 		g->conn[i].id = -1;
 	}
-	
+
 	g->client_tag = client_tag;
 	g->header_size = header=='S' ? 2 : 4;
 
