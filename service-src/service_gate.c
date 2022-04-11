@@ -25,7 +25,7 @@ struct gate {
 	int listen_id;
 	uint32_t watchdog; // 服务地址
 	uint32_t broker;   // 服务地址
-    int game_id;       // 服务器连接 id
+    int broker_sid;    // 服务器连接 id
 	int client_tag;    // 消息类型
 	int header_size;   // 包头长度
 	int max_connection; // 连接池数量
@@ -132,6 +132,11 @@ _ctrl(struct gate * g, const void * msg, int sz) {
 		g->broker = skynet_queryname(ctx, command);
 		return;
 	}
+    if (memcmp(command,"broker_sid",i)==0) {
+		_parm(tmp, sz, i);
+		//g->broker_sid = ;
+		return;
+	}
 	if (memcmp(command,"start",i) == 0) {
 		_parm(tmp, sz, i);
 		int uid = strtol(command , NULL, 10);
@@ -174,6 +179,15 @@ _forward(struct gate *g, struct connection * c, int size) {
 		// socket error
 		return;
 	}
+    if (g->broker_sid) {
+        void * temp = skynet_malloc(size + 4);
+		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
+        for (int i = 0; i < 4; ++i) {
+            *((char *)(temp + size + i)) = (g->broker_sid >> (i * 8)) & 0xFF;
+        }
+        skynet_send(ctx, 0, ctx->handle, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
+        return;
+    }
 	if (g->broker) {
 		void * temp = skynet_malloc(size);
 		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);

@@ -124,20 +124,25 @@ databuffer_push(struct databuffer *db, struct messagepool *mp, void *data, int s
 
 static int
 databuffer_readheader(struct databuffer *db, struct messagepool *mp, int header_size) {
-	if (db->header == 0) {
-		// parser header (2 or 4)
-		if (db->size < header_size) {
-			return -1;
-		}
-		uint8_t plen[4];
-		databuffer_read(db,mp,(char *)plen,header_size);
-		// big-endian
-		if (header_size == 2) {
-			db->header = plen[0] << 8 | plen[1];
-		} else {
-			db->header = plen[0] << 24 | plen[1] << 16 | plen[2] << 8 | plen[3];
-		}
-	}
+    if (db->header == 0) {
+        if (header_size) {
+            // parser header (2 or 4)
+            if (db->size < header_size) {
+                return -1;
+            }
+            uint8_t plen[4];
+            databuffer_read(db,mp,(char *)plen,header_size);
+            // big-endian
+            if (header_size == 2) {
+                db->header = plen[0] << 8 | plen[1];
+            } else {
+                db->header = plen[0] << 24 | plen[1] << 16 | plen[2] << 8 | plen[3];
+            }
+        } else {
+            db->header = db->size? db->size: 1; // 所有数据转发
+        }
+    }
+
 	if (db->size < db->header)
 		return -1;
 	return db->header;
