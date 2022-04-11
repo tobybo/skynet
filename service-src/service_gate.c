@@ -1,5 +1,6 @@
 #include "skynet.h"
 #include "skynet_socket.h"
+#include "skynet_server.h"
 #include "databuffer.h"
 #include "hashid.h"
 
@@ -25,6 +26,7 @@ struct gate {
 	int listen_id;
 	uint32_t watchdog; // 服务地址
 	uint32_t broker;   // 服务地址
+	uint32_t broker_http;   // 服务地址
     int broker_sid;    // 服务器连接 id
 	int client_tag;    // 消息类型
 	int header_size;   // 包头长度
@@ -132,6 +134,12 @@ _ctrl(struct gate * g, const void * msg, int sz) {
 		g->broker = skynet_queryname(ctx, command);
 		return;
 	}
+    if (memcmp(command,"broker_http",i)==0) {
+		_parm(tmp, sz, i);
+		g->broker_http = skynet_queryname(ctx, command);
+	    skynet_error(ctx, "broker_http: %u", g->broker_http);
+		return;
+	}
     if (memcmp(command,"broker_sid",i)==0) {
 		_parm(tmp, sz, i);
 		//g->broker_sid = ;
@@ -153,7 +161,7 @@ _ctrl(struct gate * g, const void * msg, int sz) {
 		}
 		return;
 	}
-	skynet_error(ctx, "[gate] Unkown command : %s", command);
+	skynet_error(ctx, "[gate] Unkown command : %s, i: %d", command, i);
 }
 
 static void
@@ -179,15 +187,22 @@ _forward(struct gate *g, struct connection * c, int size) {
 		// socket error
 		return;
 	}
-    if (g->broker_sid) {
-        void * temp = skynet_malloc(size + 4);
+    // if (g->broker_sid) {
+    //     void * temp = skynet_malloc(size + 4);
+	//     databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
+    //     for (int i = 0; i < 4; ++i) {
+    //         *((char *)(temp + size + i)) = (g->broker_sid >> (i * 8)) & 0xFF;
+    //     }
+    //     skynet_send(ctx, 0, skynet_context_handle(ctx), g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
+    //     return;
+    // }
+    if (g->broker_http) {
+		void * temp = skynet_malloc(size + 4);
 		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
-        for (int i = 0; i < 4; ++i) {
-            *((char *)(temp + size + i)) = (g->broker_sid >> (i * 8)) & 0xFF;
-        }
-        skynet_send(ctx, 0, ctx->handle, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
-        return;
-    }
+        *((int *)(temp + size)) = 0;
+		skynet_send(ctx, 0, g->broker_http, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
+		return;
+	}
 	if (g->broker) {
 		void * temp = skynet_malloc(size);
 		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
@@ -234,6 +249,7 @@ dispatch_socket_message(struct gate *g, const struct skynet_socket_message * mes
 	switch(message->type) {
 	case SKYNET_SOCKET_TYPE_DATA: {
 		int id = hashid_lookup(&g->hash, message->id);
+        skynet_error(ctx, "dispatch_socket_message, fd,%d, id,%d", message->id, id);
 		if (id>=0) {
 			struct connection *c = &g->conn[id];
 			dispatch_message(g, c, message->id, message->buffer, message->ud);
@@ -281,6 +297,11 @@ dispatch_socket_message(struct gate *g, const struct skynet_socket_message * mes
 			c->id = message->ud;
 			memcpy(c->remote_name, message+1, sz);
 			c->remote_name[sz] = '\0';
+            if (!g->broker_sid) {
+                g->broker_sid = message->ud;
+			    skynet_error(ctx, "set broker_sid: %d", message->ud);
+            }
+            skynet_socket_start(ctx, message->ud);
 			_report(g, "%d open %d %s:0",c->id, c->id, c->remote_name);
 			skynet_error(ctx, "socket open: %x", c->id);
 		}
@@ -306,7 +327,11 @@ _cb(struct skynet_context * ctx, void * ud, int type, int session, uint32_t sour
 		// The last 4 bytes in msg are the id of socket, write following bytes to it
 		const uint8_t * idbuf = msg + sz - 4;
 		uint32_t uid = idbuf[0] | idbuf[1] << 8 | idbuf[2] << 16 | idbuf[3] << 24;
+        if (uid == 0 && g->broker_sid) {
+            uid = g->broker_sid;
+        }
 		int id = hashid_lookup(&g->hash, uid);
+        skynet_error(ctx, "ptype_client, broker_sid,%d, uid,%u, id,%d", g->broker_sid, uid, id);
 		if (id>=0) {
 			// don't send id (last 4 bytes)
 			skynet_socket_send(ctx, uid, (void*)msg, sz-4);
@@ -373,7 +398,7 @@ gate_init(struct gate *g , struct skynet_context * ctx, char * parm) {
 		skynet_error(ctx, "Need max connection");
 		return 1;
 	}
-	if (header != 'S' && header !='L') {
+	if (header != 'S' && header !='L' && header != 'A') {
 		skynet_error(ctx, "Invalid data header style");
 		return 1;
 	}
@@ -403,7 +428,19 @@ gate_init(struct gate *g , struct skynet_context * ctx, char * parm) {
 	}
 
 	g->client_tag = client_tag;
-	g->header_size = header=='S' ? 2 : 4;
+    switch(header) {
+        case 'S':
+            g->header_size = 2;
+            break;
+        case 'L':
+            g->header_size = 4;
+            break;
+        case 'A': // all 全额转发
+            g->header_size = 0;
+            break;
+        default:
+            break;
+    }
 
 	skynet_callback(ctx,g,_cb);
 
