@@ -52,17 +52,41 @@ local function gen_interface(protocol, fd)
 	end
 end
 
+local function wrap_int(val)
+    local str = ""
+    for i = 1, 4 do
+        str = str .. string.char((val >> ((i - 1) * 8)) & 0xFF)
+    end
+    return str
+end
+
 skynet.start(function()
 	skynet.dispatch("lua", function (_,_,id)
 		socket.start(id)
-		local interface = gen_interface(protocol, id)
-		if interface.init then
-			interface.init()
-		end
+        local size, sid
+        local interface = gen_interface(protocol, id)
+        if interface.init then
+            interface.init()
+        end
+        -- local readbytes = sockethelper.readfunc(id)
+        local writebytes = sockethelper.writefunc(id)
         while true do
+            -- size = nil
+            -- while (not size) do
+            --     INFO("prepare to read size, id,%s", id)
+            --     --size = readbytes(4)
+            --     size = tonumber(readbytes(4))
+            -- end
+            -- INFO("prepare to read sid, id,%s, size,%s", id, size)
+            -- while (not sid or sid <= 0) do
+            --     sid = tonumber(readbytes(4))
+            -- end
+            -- INFO("prepare to read content, id,%s, size,%s, sid,%s", id, size, sid)
+
             -- limit request body size to 8192 (you can pass nil to unlimit)
-            local code, url, method, header, body = httpd.read_request(interface.read, 8192)
-            INFO("[web], callback, code,%s, url,%s", code, url)
+            INFO("prepare to receive http msg, id,%s", id)
+            local code, url, method, header, body, size, sid = httpd.read_request(interface.read, 8192, true)
+            INFO("receive http msg, code,%s, url,%s, size,%s, sid,%s", code, url, size, sid)
             if code then
                 if code ~= 200 then
                     response(id, interface.write, code)
@@ -84,6 +108,7 @@ skynet.start(function()
                         table.insert(tmp, string.format("%s = %s",k,v))
                     end
                     table.insert(tmp, "-----body----\n" .. body)
+                    writebytes(wrap_int(sid))
                     response(id, interface.write, code, table.concat(tmp,"\n"))
                 end
             else
@@ -92,6 +117,7 @@ skynet.start(function()
                 else
                     skynet.error(url)
                 end
+                break
             end
         end
 		socket.close(id)
@@ -106,7 +132,6 @@ else
 skynet.start(function()
 	local protocol = "http"
 	local agent = skynet.newservice(SERVICE_NAME, "agent", protocol)
-	local balance = 1
     local svr_gate_id = socket.open("127.0.0.1:8002")
     INFO("connect svr_gate_id completed, svr_gate_id,%s", svr_gate_id)
     skynet.send(agent, "lua", svr_gate_id)

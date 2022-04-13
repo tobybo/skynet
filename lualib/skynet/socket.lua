@@ -324,6 +324,7 @@ function socket.read(id, sz)
 		return ret
 	end
 	if not s.connected then
+        ERROR("socket_read, not connected, connected,%s", s.connected)
 		return false, driver.readall(s.buffer, s.pool)
 	end
 
@@ -334,6 +335,7 @@ function socket.read(id, sz)
 	if ret then
 		return ret
 	else
+        ERROR("socket_read, not ret, sz,%s", sz)
 		return false, driver.readall(s.buffer, s.pool)
 	end
 end

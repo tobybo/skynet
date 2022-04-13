@@ -28,7 +28,7 @@ SHARED := -fPIC --shared
 
 # -E 仅预处理
 # -Wl,option 将 option 传递给 link 程序
-EXPORT := -Wl,-E
+EXPORT := -Wl,-E -Wl,-rpath=3rd/http-parser/lib
 
 linux : PLAT = linux
 macosx : PLAT = macosx

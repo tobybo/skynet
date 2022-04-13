@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+#include "http_parser.h"
+
 #define BACKLOG 128
 
 struct connection {
@@ -132,12 +134,14 @@ _ctrl(struct gate * g, const void * msg, int sz) {
 	if (memcmp(command,"broker",i)==0) {
 		_parm(tmp, sz, i);
 		g->broker = skynet_queryname(ctx, command);
+        databuffer_http_setting_init();
 		return;
 	}
     if (memcmp(command,"broker_http",i)==0) {
 		_parm(tmp, sz, i);
 		g->broker_http = skynet_queryname(ctx, command);
 	    skynet_error(ctx, "broker_http: %u", g->broker_http);
+        databuffer_http_setting_init();
 		return;
 	}
     if (memcmp(command,"broker_sid",i)==0) {
@@ -180,7 +184,7 @@ _report(struct gate * g, const char * data, ...) {
 }
 
 static void
-_forward(struct gate *g, struct connection * c, int size) {
+_forward(struct gate *g, struct connection * c, int size, int sid) {
 	struct skynet_context * ctx = g->ctx;
 	int fd = c->id;
 	if (fd <= 0) {
@@ -197,16 +201,28 @@ _forward(struct gate *g, struct connection * c, int size) {
     //     return;
     // }
     if (g->broker_http) {
-		void * temp = skynet_malloc(size + 4);
-		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
-        *((int *)(temp + size)) = 0;
-		skynet_send(ctx, 0, g->broker_http, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
+        // 四字节包长 + [四字节fd + 包体] + 四字节发送对象fd
+        int len = size + 4; // 除去长度本身内存的长度
+		void * temp = skynet_malloc(len + 4 + 4);
+		databuffer_read(&c->buffer,&g->mp,(char *)(temp + 8), size);
+        *((int *)(temp + 4 + len)) = 0;
+        char * csize = (char*)temp;
+        char * client_id = (char*)temp + 4;
+        for (int i = 0; i < 4; ++i) {
+            *(csize + i) = (size >> ((3 - i) * 8)) & 0xFF;
+            *(client_id + i) = (fd >> ((3 - i) * 8)) & 0xFF;
+        }
+        skynet_error(ctx, "gate -> svr_gate, fd,%d, cfd,%d, size,%d, csize,%d", fd, *(int*)client_id, size, *(int*)csize);
+		skynet_send(ctx, 0, g->broker_http, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, len + 4 + 4);
 		return;
 	}
 	if (g->broker) {
-		void * temp = skynet_malloc(size);
+		void * temp = skynet_malloc(size + 4);
 		databuffer_read(&c->buffer,&g->mp,(char *)temp, size);
-		skynet_send(ctx, 0, g->broker, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size);
+        for (int i = 0; i < 4; ++i) {
+            *(char*)(temp + size + i) = (sid >> (i * 8)) & 0xFF;
+        }
+		skynet_send(ctx, 0, g->broker, g->client_tag | PTYPE_TAG_DONTCOPY, fd, temp, size + 4);
 		return;
 	}
 	if (c->agent) {
@@ -223,24 +239,85 @@ _forward(struct gate *g, struct connection * c, int size) {
 
 static void
 dispatch_message(struct gate *g, struct connection *c, int id, void * data, int sz) {
+    databuffer_push(&c->buffer,&g->mp, data, sz);
+    for (;;) {
+        int size = databuffer_readheader(&c->buffer, &g->mp, g->header_size);
+        if (size < 0) {
+            return;
+        } else if (size > 0) {
+            if (size >= 0x1000000) {
+                struct skynet_context * ctx = g->ctx;
+                databuffer_clear(&c->buffer,&g->mp);
+                skynet_socket_close(ctx, id);
+                skynet_error(ctx, "Recv socket message > 16M");
+                return;
+            } else {
+                _forward(g, c, size, 0);
+                databuffer_reset(&c->buffer);
+            }
+        }
+    }
+}
+
+static void
+dispatch_message_http(struct gate *g, struct connection *c, int id, void * data, int sz) {
 	databuffer_push(&c->buffer,&g->mp, data, sz);
 	for (;;) {
-		int size = databuffer_readheader(&c->buffer, &g->mp, g->header_size);
-		if (size < 0) {
+		int http_len = http_databuffer_len(&c->buffer);
+        skynet_error(g->ctx, "[gate] dispatch_message_http, sid,%d, http_len,%d, all_len,%d", c->id, http_len, c->buffer.size);
+		if (http_len <= 0) {
 			return;
-		} else if (size > 0) {
-			if (size >= 0x1000000) {
+		} else {
+			if (http_len >= 0x1000000) {
 				struct skynet_context * ctx = g->ctx;
 				databuffer_clear(&c->buffer,&g->mp);
 				skynet_socket_close(ctx, id);
 				skynet_error(ctx, "Recv socket message > 16M");
 				return;
 			} else {
-				_forward(g, c, size);
+				_forward(g, c, http_len, 0);
 				databuffer_reset(&c->buffer);
+                http_databuffer_reset(&c->buffer);
 			}
 		}
 	}
+}
+
+static void
+dispatch_message_proxy(struct gate *g, struct connection *c, int id, void * data, int sz) {
+    skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy, sz,%d", sz);
+    databuffer_push(&c->buffer,&g->mp, data, sz);
+
+    for (;;) {
+        static int sid = -1;
+        skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy send msg begin, sid,%d", sid);
+        if (sid == -1) {
+            if (c->buffer.size < 4) {
+                return;
+            }
+            databuffer_read(&c->buffer, &g->mp, (char*)&sid, 4);
+            http_databuffer_reset(&c->buffer);
+        }
+        int http_len = http_databuffer_len(&c->buffer);
+        skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy, sid,%d, httplen,%d, all,%d, httpoffset,%d, msgoffset,%d, db->httplen,%d, msg->head,%x, http_head,%x, flag,%d", sid, http_len, c->buffer.size, c->buffer.http_offset, c->buffer.offset, c->buffer.http_len, c->buffer.head, c->buffer.http_head, c->buffer.parser->user_flag);
+        if (http_len <= 0) {
+            return;
+        } else {
+            if (http_len >= 0x1000000) {
+                struct skynet_context * ctx = g->ctx;
+                databuffer_clear(&c->buffer,&g->mp);
+                skynet_socket_close(ctx, id);
+                skynet_error(ctx, "Recv socket message > 16M");
+                return;
+            } else {
+                _forward(g, c, http_len, sid);
+                databuffer_reset(&c->buffer);
+                sid = -1;
+                http_databuffer_reset(&c->buffer);
+                skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy send msg done, sid,%d", sid);
+            }
+        }
+    }
 }
 
 static void
@@ -252,7 +329,13 @@ dispatch_socket_message(struct gate *g, const struct skynet_socket_message * mes
         skynet_error(ctx, "dispatch_socket_message, fd,%d, id,%d", message->id, id);
 		if (id>=0) {
 			struct connection *c = &g->conn[id];
-			dispatch_message(g, c, message->id, message->buffer, message->ud);
+            if (g->broker_http) {
+			    dispatch_message_http(g, c, message->id, message->buffer, message->ud);
+            } else if(g->broker) {
+			    dispatch_message_proxy(g, c, message->id, message->buffer, message->ud);
+            } else {
+			    dispatch_message(g, c, message->id, message->buffer, message->ud);
+            }
 		} else {
 			skynet_error(ctx, "Drop unknown connection %d message", message->id);
 			skynet_socket_close(ctx, message->id);
@@ -297,9 +380,11 @@ dispatch_socket_message(struct gate *g, const struct skynet_socket_message * mes
 			c->id = message->ud;
 			memcpy(c->remote_name, message+1, sz);
 			c->remote_name[sz] = '\0';
-            if (!g->broker_sid) {
-                g->broker_sid = message->ud;
-			    skynet_error(ctx, "set broker_sid: %d", message->ud);
+            if (g->broker) {
+                if (!g->broker_sid) {
+                    g->broker_sid = message->ud;
+                    skynet_error(ctx, "set broker_sid: %d", message->ud);
+                }
             }
             skynet_socket_start(ctx, message->ud);
 			_report(g, "%d open %d %s:0",c->id, c->id, c->remote_name);
@@ -331,7 +416,7 @@ _cb(struct skynet_context * ctx, void * ud, int type, int session, uint32_t sour
             uid = g->broker_sid;
         }
 		int id = hashid_lookup(&g->hash, uid);
-        skynet_error(ctx, "ptype_client, broker_sid,%d, uid,%u, id,%d", g->broker_sid, uid, id);
+        skynet_error(ctx, "ptype_client, broker_sid,%d, uid,%u, id,%d, size,%d, csize,%d", g->broker_sid, uid, id, sz, *(int*)msg);
 		if (id>=0) {
 			// don't send id (last 4 bytes)
 			skynet_socket_send(ctx, uid, (void*)msg, sz-4);
@@ -425,6 +510,8 @@ gate_init(struct gate *g , struct skynet_context * ctx, char * parm) {
 	int i;
 	for (i=0;i<max;i++) {
 		g->conn[i].id = -1;
+        g->conn[i].buffer.parser = skynet_malloc(sizeof(*g->conn[i].buffer.parser));
+        http_parser_init(g->conn[i].buffer.parser, HTTP_BOTH);
 	}
 
 	g->client_tag = client_tag;

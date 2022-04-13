@@ -34,7 +34,24 @@ local function readcrln(readbytes, body)
 	end
 end
 
-function M.recvheader(readbytes, lines, header)
+--local zero = string.byte("0", 1)
+local zero = 0
+local function to_int(str)
+    local ret = 0
+    for i = 1, 4 do
+        local val = str:byte(i)
+        LOG("[to_int], zero,%s, i,%s, val,%s, num,%s", zero, i, val, val - zero)
+        ret = ret | ((val - zero) << ((4 - i) * 8))
+    end
+    return ret
+end
+
+function M.recvheader(readbytes, lines, header, has_size)
+    local size, sid, pre_len
+    local all_size = 0
+    if header == "" and has_size then
+        pre_len = 0
+    end
 	if #header >= 2 then
 		if header:find "^\r\n" then
 			return header:sub(3)
@@ -46,19 +63,32 @@ function M.recvheader(readbytes, lines, header)
 		result = header:sub(e+4)
 	else
 		while true do
+            LOG("[internal], prepare to readbytes, has_size,%s, pre_len,%s, size,%s, sid,%s", has_size, pre_len, size, sid)
 			local bytes = readbytes()
+            all_size = all_size + #bytes
+            LOG("[internal], readbytes once, has_size,%s, pre_len,%s, all,%s", has_size, pre_len, all_size)
 			header = header .. bytes
-			e = header:find("\r\n\r\n", -#bytes-3, true)
-			if e then
-				result = header:sub(e+4)
-				break
-			end
-			if header:find "^\r\n" then
-				return header:sub(3)
-			end
-			if #header > LIMIT then
-				return
-			end
+            if pre_len and pre_len < 8 then
+                if #header >= 8 then
+                    size = to_int(header:sub(1,4))
+                    sid = to_int(header:sub(5,8))
+                    header = header:sub(9)
+                    pre_len = 8
+                end
+            end
+            if not pre_len or pre_len >= 8 then
+                e = header:find("\r\n\r\n", -#bytes-3, true)
+                if e then
+                    result = header:sub(e+4)
+                    break
+                end
+                if header:find "^\r\n" then
+                    return header:sub(3)
+                end
+                if #header > LIMIT then
+                    return
+                end
+            end
 		end
 	end
 	for v in header:gmatch("(.-)\r\n") do
@@ -67,7 +97,7 @@ function M.recvheader(readbytes, lines, header)
 		end
 		table.insert(lines, v)
 	end
-	return result
+	return result, size, sid
 end
 
 function M.parseheader(lines, from, header)

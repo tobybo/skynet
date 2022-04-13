@@ -48,9 +48,9 @@ local http_status_msg = {
 	[505] = "HTTP Version not supported",
 }
 
-local function readall(readbytes, bodylimit)
+local function readall(readbytes, bodylimit, has_size)
 	local tmpline = {}
-	local body = internal.recvheader(readbytes, tmpline, "")
+	local body, size, sid = internal.recvheader(readbytes, tmpline, "", has_size)
 	if not body then
 		return 413	-- Request Entity Too Large
 	end
@@ -96,13 +96,14 @@ local function readall(readbytes, bodylimit)
 		end
 	end
 
-	return 200, url, method, header, body
+	return 200, url, method, header, body, size, sid
 end
 
 function httpd.read_request(...)
-	local ok, code, url, method, header, body = pcall(readall, ...)
-	if ok then
-		return code, url, method, header, body
+	--local ok, code, url, method, header, body, size, sid = pcall(readall, ...)
+	local code, url, method, header, body, size, sid = readall(...)
+	if true then
+		return code, url, method, header, body, size, sid
 	else
 		return nil, code
 	end

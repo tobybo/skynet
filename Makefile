@@ -23,6 +23,20 @@ $(LUA_STATICLIB) :
 TLS_LIB=
 TLS_INC=
 
+# http_parser
+
+HTTP_PARSER := 3rd/http-parser/lib/libhttp_parser.so
+HTTP_PARSER_INC := 3rd/http-parser/
+
+$(HTTP_PARSER): 3rd/http-parser/
+	cd 3rd/http-parser && \
+	$(MAKE) CC=$(CC) library && \
+	mkdir -p lib && \
+	mv libhttp_parser* lib/
+
+http_parser : $(HTTP_PARSER)
+
+
 # jemalloc
 
 JEMALLOC_STATICLIB := 3rd/jemalloc/lib/libjemalloc_pic.a
@@ -31,7 +45,7 @@ JEMALLOC_INC := 3rd/jemalloc/include/jemalloc
 # 依赖 jemalloc （用于内存管理）
 all : jemalloc
 
-.PHONY : jemalloc update3rd
+.PHONY : jemalloc update3rd http_parser
 
 MALLOC_STATICLIB := $(JEMALLOC_STATICLIB)
 
@@ -83,8 +97,8 @@ all : \
   $(foreach v, $(CSERVICE), $(CSERVICE_PATH)/$(v).so) \
   $(foreach v, $(LUA_CLIB), $(LUA_CLIB_PATH)/$(v).so)
 
-$(SKYNET_BUILD_PATH)/skynet : $(foreach v, $(SKYNET_SRC), skynet-src/$(v)) $(LUA_LIB) $(MALLOC_STATICLIB)
-	$(CC) $(CFLAGS) -o $@ $^ -Iskynet-src -I$(JEMALLOC_INC) $(LDFLAGS) $(EXPORT) $(SKYNET_LIBS) $(SKYNET_DEFINES)
+$(SKYNET_BUILD_PATH)/skynet : $(foreach v, $(SKYNET_SRC), skynet-src/$(v)) $(LUA_LIB) $(MALLOC_STATICLIB) $(HTTP_PARSER)
+	$(CC) $(CFLAGS) -o $@ -L$(HTTP_PARSER_INC)/lib $^ 3rd/http-parser/http_parser.c -Iskynet-src -I$(JEMALLOC_INC) -I$(HTTP_PARSER_INC) $(LDFLAGS) $(EXPORT) $(SKYNET_LIBS) $(SKYNET_DEFINES)
 
 $(LUA_CLIB_PATH) :
 	mkdir $(LUA_CLIB_PATH)
@@ -94,7 +108,7 @@ $(CSERVICE_PATH) :
 
 define CSERVICE_TEMP
   $$(CSERVICE_PATH)/$(1).so : service-src/service_$(1).c | $$(CSERVICE_PATH)
-	$$(CC) $$(CFLAGS) $$(SHARED) $$< -o $$@ -Iskynet-src
+	$$(CC) $$(CFLAGS) $$(SHARED) $$< -o $$@ 3rd/http-parser/http_parser.c -Iskynet-src -I$(HTTP_PARSER_INC)
 endef
 
 $(foreach v, $(CSERVICE), $(eval $(call CSERVICE_TEMP,$(v))))

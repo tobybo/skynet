@@ -5,7 +5,13 @@
 #include <string.h>
 #include <assert.h>
 
+#include "skynet.h"
+
+#include "http_parser.h"
+
 #define MESSAGEPOOL 1023
+
+http_parser_settings *http_settings = NULL;
 
 struct message {
 	char * buffer;
@@ -19,6 +25,11 @@ struct databuffer {
 	int size;
 	struct message * head;
 	struct message * tail;
+
+	struct message * http_head;
+    http_parser *parser;
+    int http_offset;
+    int http_len;
 };
 
 struct messagepool_list {
@@ -59,6 +70,9 @@ _return_message(struct databuffer *db, struct messagepool *mp) {
 	m->size = 0;
 	m->next = mp->freelist;
 	mp->freelist = m;
+    if (db->http_head == m) {
+        db->http_head = NULL;
+    }
 }
 
 static void
@@ -86,6 +100,69 @@ databuffer_read(struct databuffer *db, struct messagepool *mp, char * buffer, in
 			sz-=bsz;
 		}
 	}
+}
+
+static void
+http_databuffer_reset(struct databuffer *db) {
+    db->http_head = db->head;
+    db->http_offset = db->offset;
+    db->http_len = 0;
+    //http_parser_init(db->parser, HTTP_BOTH);
+}
+
+/*
+ * 1. 读取完一个消息，则返回消息总长度
+ * 2. 数据读取完，但是一个消息都没读完
+ * 3. 数据读取完，刚好一个完整 http 消息
+ * */
+static int
+http_databuffer_len(struct databuffer *db) {
+    struct message *head = db->http_head;
+    int http_offset = db->http_offset;
+    if (!head) {
+        db->http_head = db->head;
+        head = db->http_head;
+        http_offset = db->offset;
+        db->http_offset = db->offset;
+    } else if (head->size == http_offset) {
+        head = head->next;
+        http_offset = 0;
+    }
+    if (!head) {
+        return 0;
+    }
+    int len = db->http_len;
+    db->parser->user_flag = 0;
+	while (head) {
+		struct message *current = head;
+		int bsz = current->size - http_offset;
+        int http_len = http_parser_execute(db->parser, http_settings, current->buffer + http_offset, bsz);
+        len += http_len;
+        db->http_offset = http_offset + http_len;
+        db->http_len = len;
+        if (db->parser->user_flag) {
+            // 一个 http 消息结束
+            db->http_head = head;
+            db->http_len = 0;
+            return len;
+        } else if (http_len == bsz) {
+            head = head->next;
+            http_offset = 0;
+        } else {
+            // 出错
+            db->http_head = NULL;
+            db->http_offset = 0;
+            db->http_len = 0;
+            http_parser_init(db->parser, HTTP_BOTH);
+            return -1;
+        }
+	}
+    if (!head) {
+        db->http_head = db->tail;
+    } else {
+        db->http_head = head;
+    }
+    return 0;
 }
 
 static void
@@ -158,7 +235,26 @@ databuffer_clear(struct databuffer *db, struct messagepool *mp) {
 	while (db->head) {
 		_return_message(db,mp);
 	}
+    http_parser *parser = db->parser;
+    http_parser_init(db->parser, HTTP_BOTH);
 	memset(db, 0, sizeof(*db));
+    db->parser = parser;
+}
+
+static int
+databuffer_http_complete(http_parser* parser) {
+    parser->user_flag = 1;
+    return 1;
+}
+
+
+static void
+databuffer_http_setting_init() {
+    if (!http_settings) {
+        http_settings = skynet_malloc(sizeof(*http_settings));
+        memset((char*)http_settings, 0, sizeof(*http_settings));
+        http_settings->on_message_complete = databuffer_http_complete;
+    }
 }
 
 #endif

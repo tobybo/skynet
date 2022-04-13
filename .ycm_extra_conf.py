@@ -44,6 +44,8 @@ flags = [
 './skynet-src',
 '-I',
 './3rd/lua',
+'-I',
+'./3rd/http-parser',
 '-isystem',
 '/usr/include',
 '-isystem',
