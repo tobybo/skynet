@@ -250,6 +250,7 @@ local function co_create(f)
 	local co = tremove(coroutine_pool)
 	if co == nil then
 		co = coroutine_create(function(...)
+            --(toby@2022-03-13): 只是该协程第一次被resume的时候会走到这里，先直接调用注册的回调函数
 			f(...)
 			while true do
 				local session = session_coroutine_id[co]
@@ -275,14 +276,18 @@ local function co_create(f)
 				-- recycle co into pool
 				f = nil
 				coroutine_pool[#coroutine_pool+1] = co
+                --(toby@2022-03-13): 这里的连续两次yield 妙呀
 				-- recv new main function f
+                --(toby@2022-03-13): 第一次挂起，等待接收新的回调函数
 				f = coroutine_yield "SUSPEND"
+                --(toby@2022-03-13): 第二次挂起，等待定时器消息来了之后唤醒就可以拿到唤醒时传递进来的参数了
 				f(coroutine_yield())
 			end
 		end)
 	else
 		-- pass the main function f to coroutine, and restore running thread
 		local running = running_thread
+        --(toby@2022-03-13): 取到挂起中的工作协程，该协程已经执行完之前的事务，可以将新的回调函数通过 resume 参数传递进去
 		coroutine_resume(co, f)
 		running_thread = running
 	end
@@ -372,6 +377,7 @@ end
 skynet.trace_timeout(false)	-- turn off by default
 
 function skynet.timeout(ti, func)
+    --(toby@2022-03-13): 往定时器服务发一条消息, 非阻塞
 	local session = c.intcommand("TIMEOUT",ti)
 	assert(session)
 	local co = co_create_for_timeout(func, ti)
@@ -771,6 +777,7 @@ local trace_source = {}
 
 local function raw_dispatch_message(prototype, msg, sz, session, source)
 	-- skynet.PTYPE_RESPONSE = 1, read skynet.h
+    -- 回复消息 prototype == 1
 	if prototype == 1 then
 		local co = session_id_coroutine[session]
 		if co == "BREAK" then
@@ -946,7 +953,12 @@ function skynet.init_service(start)
 end
 
 function skynet.start(start_func)
-	c.callback(skynet.dispatch_message)
+    --(toby@2022-03-12): c = require "skynet.core"
+    --  require "xxx.core" 对应 调用 luaopen_xxx_core 可以全局搜索一下
+    --  xxx.core 对应 xxx.so: xxx.c, (lxxx.c or lua...xxx.c 等表示跟lua交互的文件)
+    --  详解见 https://blog.csdn.net/bo_self_effacing/article/details/106741025
+    --  这里对应 lua-skynet.c lcallback方法
+	c.callback(skynet.dispatch_message, false)
 	init_thread = skynet.timeout(0, function()
 		skynet.init_service(start_func)
 		init_thread = nil

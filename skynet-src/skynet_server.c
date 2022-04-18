@@ -699,6 +699,7 @@ _filter_args(struct skynet_context * context, int type, int *session, void ** da
 
 int
 skynet_send(struct skynet_context * context, uint32_t source, uint32_t destination , int type, int session, void * data, size_t sz) {
+    /* toby@2022-03-11): 消息长度检查 */
 	if ((sz & MESSAGE_TYPE_MASK) != sz) {
 		skynet_error(context, "The message to %x is too large", destination);
 		if (type & PTYPE_TAG_DONTCOPY) {
@@ -706,6 +707,10 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 		}
 		return -2;
 	}
+    /* toby@2022-03-11):               */
+    /* 1. 申请session_id 简单自增      */
+    /* 2. copy消息内容                 */
+    /* 3. 将type拼接到消息长度的高8位  */
 	_filter_args(context, type, &session, (void **)&data, &sz);
 
 	if (source == 0) {
@@ -722,6 +727,7 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 		return session;
 	}
 	if (skynet_harbor_message_isremote(destination)) {
+        /* toby@2022-03-11): 这里动态分配内存的原因是这个msg会用作远程消息的data部分 */
 		struct remote_message * rmsg = skynet_malloc(sizeof(*rmsg));
 		rmsg->destination.handle = destination;
 		rmsg->message = data;
@@ -729,6 +735,8 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 		rmsg->type = sz >> MESSAGE_TYPE_SHIFT;
 		skynet_harbor_send(rmsg, source, session);
 	} else {
+        /* toby@2022-03-11): 用一个局部变量来传递数据没有问题，
+         * 因为消息队列存放的时候是结构体复制，不是存放msg的地址*/
 		struct skynet_message smsg;
 		smsg.source = source;
 		smsg.session = session;

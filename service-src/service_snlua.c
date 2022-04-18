@@ -45,7 +45,7 @@ cleardummy(lua_State *L) {
   return 0;
 }
 
-static int 
+static int
 codecache(lua_State *L) {
 	luaL_Reg l[] = {
 		{ "clear", cleardummy },

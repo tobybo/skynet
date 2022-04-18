@@ -14,6 +14,7 @@ local function number_address(name)
 end
 
 function skynet.launch(...)
+    -- skynet.launch("snlua","launcher")
 	local addr = c.command("LAUNCH", table.concat({...}," "))
 	if addr then
 		return tonumber(string.sub(addr , 2), 16)

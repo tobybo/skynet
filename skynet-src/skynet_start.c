@@ -280,7 +280,8 @@ skynet_start(struct skynet_config * config) {
 	skynet_profile_enable(config->profile); /* toby@2022-03-10): 性能检测开关 例如 打开后会记录消息处理耗时 */
 
     /* toby@2022-03-10): 启动基础服务之日志服务 （模块名，日志文件名） */
-	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger); if (ctx == NULL) { fprintf(stderr, "Can't launch %s service\n", config->logservice);
+	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger);
+    if (ctx == NULL) { fprintf(stderr, "Can't launch %s service\n", config->logservice);
 		exit(1);
 	}
 
