@@ -132,7 +132,7 @@ http_databuffer_len(struct databuffer *db) {
         return 0;
     }
     int len = db->http_len;
-    db->parser->user_flag = 0;
+    db->parser->data = (void*)0;
 	while (head) {
 		struct message *current = head;
 		int bsz = current->size - http_offset;
@@ -140,7 +140,7 @@ http_databuffer_len(struct databuffer *db) {
         len += http_len;
         db->http_offset = http_offset + http_len;
         db->http_len = len;
-        if (db->parser->user_flag) {
+        if ((long)db->parser->data) {
             // 一个 http 消息结束
             db->http_head = head;
             db->http_len = 0;
@@ -243,7 +243,7 @@ databuffer_clear(struct databuffer *db, struct messagepool *mp) {
 
 static int
 databuffer_http_complete(http_parser* parser) {
-    parser->user_flag = 1;
+    parser->data = (void *)1;
     return 1;
 }
 
