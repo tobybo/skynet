@@ -35,12 +35,6 @@ get_time() {
 #endif
 }
 
-struct snlua {
-	lua_State * L;
-	struct skynet_context * ctx;
-	const char * preload;
-};
-
 static int
 traceback (lua_State *L) {
 	const char *msg = lua_tostring(L, 1);
@@ -52,20 +46,17 @@ traceback (lua_State *L) {
 	return 1;
 }
 
+struct callback_context {
+	lua_State *L;
+};
+
 static int
 _cb(struct skynet_context * context, void * ud, int type, int session, uint32_t source, const void * msg, size_t sz) {
-	lua_State *L = ud;
+	struct callback_context *cb_ctx = (struct callback_context *)ud;
+	lua_State *L = cb_ctx->L;
 	int trace = 1;
 	int r;
-	int top = lua_gettop(L);
-	if (top == 0) {
-		lua_pushcfunction(L, traceback);
-		lua_rawgetp(L, LUA_REGISTRYINDEX, _cb);
-	} else {
-        /* toby@2022-03-14): 不需要每次都去注册表取回调函数 */
-		assert(top == 2);
-	}
-	lua_pushvalue(L,2); /* toby@2022-03-14): 压入 lua_callback 的副本，用作调用消耗 */
+	lua_pushvalue(L,2);
 
 	lua_pushinteger(L, type);
 	lua_pushlightuserdata(L, (void *)msg);
@@ -104,28 +95,47 @@ forward_cb(struct skynet_context * context, void * ud, int type, int session, ui
 	return 1;
 }
 
+static void
+clear_last_context(lua_State *L) {
+	if (lua_getfield(L, LUA_REGISTRYINDEX, "callback_context") == LUA_TUSERDATA) {
+		lua_pushnil(L);
+		lua_setiuservalue(L, -2, 2);
+	}
+	lua_pop(L, 1);
+}
+
+static int
+_cb_pre(struct skynet_context * context, void * ud, int type, int session, uint32_t source, const void * msg, size_t sz) {
+	struct callback_context *cb_ctx = (struct callback_context *)ud;
+	clear_last_context(cb_ctx->L);
+	skynet_callback(context, ud, _cb);
+	return _cb(context, cb_ctx, type, session, source, msg, sz);
+}
+
+static int
+_forward_pre(struct skynet_context *context, void *ud, int type, int session, uint32_t source, const void *msg, size_t sz) {
+	struct callback_context *cb_ctx = (struct callback_context *)ud;
+	clear_last_context(cb_ctx->L);
+	skynet_callback(context, ud, forward_cb);
+	return forward_cb(context, cb_ctx, type, session, source, msg, sz);
+}
+
 static int
 lcallback(lua_State *L) {
 	struct skynet_context * context = lua_touserdata(L, lua_upvalueindex(1));
 	int forward = lua_toboolean(L, 2);
 	luaL_checktype(L,1,LUA_TFUNCTION);
 	lua_settop(L,1);
-    /* toby@2022-03-12): 将c层的回调函数注册到 注册表 t[_cb] = lua_callback
-     *  因为c层服务持有的回调函数必须具有 skynet_cb 结构
-     *  这里巧妙的用固定的 _cb, forward_cb 两个方法来间接注册lua层消息处理函数
-     * */
-	lua_rawsetp(L, LUA_REGISTRYINDEX, _cb);
+	struct callback_context * cb_ctx = (struct callback_context *)lua_newuserdatauv(L, sizeof(*cb_ctx), 2);
+	cb_ctx->L = lua_newthread(L);
+	lua_pushcfunction(cb_ctx->L, traceback);
+	lua_setiuservalue(L, -2, 1);
+	lua_getfield(L, LUA_REGISTRYINDEX, "callback_context");
+	lua_setiuservalue(L, -2, 2);
+	lua_setfield(L, LUA_REGISTRYINDEX, "callback_context");
+	lua_xmove(L, cb_ctx->L, 1);
 
-    /* toby@2022-03-12): 获取主虚拟机 TODO 深入了解 */
-	lua_rawgeti(L, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
-	lua_State *gL = lua_tothread(L,-1);
-
-	if (forward) {
-		skynet_callback(context, gL, forward_cb);
-	} else {
-		skynet_callback(context, gL, _cb);
-	}
-
+	skynet_callback(context, cb_ctx, (forward)?(_forward_pre):(_cb_pre));
 	return 0;
 }
 

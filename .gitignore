@@ -2,7 +2,14 @@
 *.o
 skynet
 *.a
+/skynet
+/skynet.pid
 3rd/lua/lua
 3rd/lua/luac
-cservice/
-luaclib/
+3rd/lua/all
+/cservice
+/luaclib
+*.so
+*.dSYM
+.DS_Store
+.vscode
