@@ -23,7 +23,7 @@ struct stm_copy {
 	void * msg;
 };
 
-// msg should alloc by skynet_malloc 
+// msg should alloc by skynet_malloc
 static struct stm_copy *
 stm_newcopy(void * msg, int32_t sz) {
 	struct stm_copy * copy = skynet_malloc(sizeof(*copy));
@@ -99,7 +99,7 @@ stm_copy(struct stm_object *obj) {
 		assert(ref > 0);
 	}
 	rwlock_runlock(&obj->lock);
-	
+
 	return ret;
 }
 
@@ -116,6 +116,7 @@ stm_update(struct stm_object *obj, void *msg, int32_t sz) {
 
 // lua binding
 
+// lua 虚拟机持有该数据，包装成 userdata，受 lua gc 管理
 struct boxstm {
 	struct stm_object * obj;
 };
@@ -137,6 +138,7 @@ lnewwriter(lua_State *L) {
 		sz = (size_t)luaL_checkinteger(L, 2);
 	} else {
 		const char * tmp = luaL_checklstring(L,1,&sz);
+        /* toby@2023-06-20): 从 lua 层内存转移到 c 层内存 */
 		msg = skynet_malloc(sz);
 		memcpy(msg, tmp, sz);
 	}
@@ -175,6 +177,7 @@ lupdate(lua_State *L) {
 	return 0;
 }
 
+// lua 虚拟机持有该数据，包装成 userdata，受 lua gc 管理
 struct boxreader {
 	struct stm_object *obj;
 	struct stm_copy *lastcopy;

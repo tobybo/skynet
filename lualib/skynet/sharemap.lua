@@ -34,7 +34,7 @@ function sharemap.writer(typename, obj)
 		__typename = typename,
 		__obj = stmobj,
 		__data = obj,
-		commit = sharemap.commit,
+		commit = sharemap.commit, -- 读写者才能执行修改
 		copy = sharemap.copy,
 	}
 	return setmetatable(ret, { __index = obj, __newindex = obj })
@@ -55,9 +55,9 @@ end
 function sharemap.reader(typename, stmcpy)
 	local sp = loadsp()
 	local stmobj = stm.newcopy(stmcpy)
-	local _, data = stmobj(function(msg, sz)
+	local _, data = stmobj(function(msg, sz, sth)
 		return sp:decode(typename, msg, sz)
-	end)
+	end, sth)
 
 	local obj = {
 		__typename = typename,
