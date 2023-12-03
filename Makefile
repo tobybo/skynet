@@ -19,7 +19,7 @@ $(LUA_STATICLIB) :
 
 # https : turn on TLS_MODULE to add https support
 
-# TLS_MODULE=ltls
+TLS_MODULE=ltls
 TLS_LIB=
 TLS_INC=
 
@@ -53,7 +53,7 @@ update3rd :
 CSERVICE = snlua logger gate harbor
 LUA_CLIB = skynet \
   client \
-  bson md5 sproto lpeg $(TLS_MODULE)
+  bson md5 sproto lpeg $(TLS_MODULE) cjson
 
 LUA_CLIB_SKYNET = \
   lua-skynet.c lua-seri.c \
@@ -115,6 +115,9 @@ $(LUA_CLIB_PATH)/sproto.so : lualib-src/sproto/sproto.c lualib-src/sproto/lsprot
 $(LUA_CLIB_PATH)/ltls.so : lualib-src/ltls.c | $(LUA_CLIB_PATH)
 	$(CC) $(CFLAGS) $(SHARED) -Iskynet-src -L$(TLS_LIB) -I$(TLS_INC) $^ -o $@ -lssl
 
+$(LUA_CLIB_PATH)/cjson.so :
+	cd 3rd/lua-cjson && make install
+
 $(LUA_CLIB_PATH)/lpeg.so : 3rd/lpeg/lpcap.c 3rd/lpeg/lpcode.c 3rd/lpeg/lpprint.c 3rd/lpeg/lptree.c 3rd/lpeg/lpvm.c 3rd/lpeg/lpcset.c | $(LUA_CLIB_PATH)
 	$(CC) $(CFLAGS) $(SHARED) -I3rd/lpeg $^ -o $@ 
 
@@ -127,5 +130,6 @@ ifneq (,$(wildcard 3rd/jemalloc/Makefile))
 	cd 3rd/jemalloc && $(MAKE) clean && rm Makefile
 endif
 	cd 3rd/lua && $(MAKE) clean
+	cd 3rd/lua-cjson && make clean
 	rm -f $(LUA_STATICLIB)
 

@@ -4,6 +4,7 @@ local internal = require "http.internal"
 local dns = require "skynet.dns"
 local string = string
 local table = table
+local json = require "json"
 
 local httpc = {}
 
@@ -161,12 +162,13 @@ function httpc.post(host, url, form, recvheader)
 	local header = {
 		["content-type"] = "application/x-www-form-urlencoded"
 	}
-	local body = {}
-	for k,v in pairs(form) do
-		table.insert(body, string.format("%s=%s",escape(k),escape(v)))
-	end
+	local body = json.encode(form)
+	-- for k,v in pairs(form) do
+	--     table.insert(body, string.format("%s=%s",escape(k),escape(v)))
+	-- end
 
-	return httpc.request("POST", host, url, recvheader, header, table.concat(body , "&"))
+	--return httpc.request("POST", host, url, recvheader, header, table.concat(body , "&"))
+	return httpc.request("POST", host, url, recvheader, header, body)
 end
 
 return httpc

@@ -89,14 +89,12 @@ static const char * load_config = "\
     --(toby@2022-03-09): 将配置中的 $XXX 转化为环境变量XXX的值 \n\
 	local function getenv(name) return assert(os.getenv(name), [[os.getenv() failed: ]] .. name) end\n\
 \n\
-    --(toby@2022-03-09): 获取文件分隔符 linux上是 "/" \n\
 	local sep = package.config:sub(1,1)\n\
 \n\
-    --(toby@2022-03-09): 设置当前路径 "./" \n\
+    --(toby@2022-03-09): 设置当前路径  \n\
 	local current_path = [[.]]..sep\n\
 \n\
     --(toby@2022-03-09): 引入其他文件配置 \n\
-    --  例如 include "config.path" filename = "config.path" \n\
 	local function include(filename)\n\
 		local last_path = current_path\n\
 \n\
@@ -104,7 +102,6 @@ static const char * load_config = "\
 		local path, name = filename:match([[(.*]]..sep..[[)(.*)$]])\n\
 		if path then\n\
 			if path:sub(1,1) == sep then	-- root\n\
-                --(toby@2022-03-09): 路径首字符为 "/" 表示绝对路径 \n\
 				current_path = path\n\
 			else\n\
                 --(toby@2022-03-09): 相对路径 \n\
@@ -182,7 +179,7 @@ main(int argc, char *argv[]) {
 	config.thread =  optint("thread",8); /* toby@2022-03-10): 工作线程数 */
 	config.module_path = optstring("cpath","./cservice/?.so"); /* toby@2022-03-10): c服务路径 */
 	config.harbor = optint("harbor", 1); /* toby@2022-03-10): 集群节点id */
-	config.bootstrap = optstring("bootstrap","snlua bootstrap")
+	config.bootstrap = optstring("bootstrap","snlua bootstrap");
 	config.daemon = optstring("daemon", NULL); /* toby@2022-03-10): 后台模式，存放进程id的文件名 */
 	config.logger = optstring("logger", NULL); /* toby@2022-03-10): 日志的路径名，不配置的话则输出到标准输出，需要开前台模式才能看到 */
 	config.logservice = optstring("logservice", "logger");
