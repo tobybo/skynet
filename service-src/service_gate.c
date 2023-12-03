@@ -299,7 +299,7 @@ dispatch_message_proxy(struct gate *g, struct connection *c, int id, void * data
             http_databuffer_reset(&c->buffer);
         }
         int http_len = http_databuffer_len(&c->buffer);
-        skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy, sid,%d, httplen,%d, all,%d, httpoffset,%d, msgoffset,%d, db->httplen,%d, msg->head,%x, http_head,%x, flag,%d", sid, http_len, c->buffer.size, c->buffer.http_offset, c->buffer.offset, c->buffer.http_len, c->buffer.head, c->buffer.http_head, c->buffer.parser->user_flag);
+        skynet_error(g->ctx, "[svr_gate] dispatch_message_proxy, sid,%d, httplen,%d, all,%d, httpoffset,%d, msgoffset,%d, db->httplen,%d, msg->head,%x, http_head,%x, flag,%d", sid, http_len, c->buffer.size, c->buffer.http_offset, c->buffer.offset, c->buffer.http_len, c->buffer.head, c->buffer.http_head, (unsigned int)c->buffer.parser->data);
         if (http_len <= 0) {
             return;
         } else {

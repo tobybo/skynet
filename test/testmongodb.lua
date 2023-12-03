@@ -14,7 +14,7 @@ local function _create_client()
 		{
 			host = host, port = port,
 			username = username, password = password,
-			authdb = db_name,
+			authdb = "admin",
 		}
 	)
 end
@@ -79,10 +79,19 @@ function test_find_and_remove()
 	db.testcoll:dropIndex("*")
 	db.testcoll:drop()
 
+	local cursor = db.testcoll:find()
+	assert(cursor:hasNext() == false)
+
 	db.testcoll:ensureIndex({test_key = 1}, {test_key2 = -1}, {unique = true, name = "test_index"})
 
 	ok, err, ret = db.testcoll:safe_insert({test_key = 1, test_key2 = 1})
 	assert(ok and ret and ret.n == 1, err)
+
+	cursor = db.testcoll:find()
+	assert(cursor:hasNext() == true)
+	local v = cursor:next()
+	assert(v)
+	assert(v.test_key == 1)
 
 	ok, err, ret = db.testcoll:safe_insert({test_key = 1, test_key2 = 2})
 	assert(ok and ret and ret.n == 1, err)
@@ -186,6 +195,32 @@ local function test_safe_batch_insert()
 	assert(length == ret:count(), "test safe batch insert failed")
 end
 
+local function test_safe_batch_delete()
+	local ok, err, ret
+	local c = _create_client()
+	local db = c[db_name]
+
+	db.testcoll:drop()
+
+	local docs, length = {}, 10
+	for i = 1, length do
+		table.insert(docs, {test_key = i})
+	end
+
+	db.testcoll:safe_batch_insert(docs)
+
+	docs = {}
+	local del_num = 5
+	for i = 1, del_num do
+		table.insert(docs, {test_key = i})
+	end
+
+	db.testcoll:safe_batch_delete(docs)
+
+	local ret = db.testcoll:find()
+	assert((length - del_num) == ret:count(), "test safe batch delete failed")
+end
+
 skynet.start(function()
 	if username then
 		print("Test auth")
@@ -203,5 +238,7 @@ skynet.start(function()
 	test_expire_index()
 	print("test safe batch insert")
 	test_safe_batch_insert()
+	print("test safe batch delete")
+	test_safe_batch_delete()
 	print("mongodb test finish.");
 end)

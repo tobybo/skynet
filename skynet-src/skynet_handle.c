@@ -10,7 +10,6 @@
 
 #define DEFAULT_SLOT_SIZE 4
 #define MAX_SLOT_SIZE 0x40000000
-#define HASH_HANDLE(s, handle) (handle & (s->slot_size-1))
 
 struct handle_name {
 	char * name;
@@ -46,7 +45,7 @@ skynet_handle_register(struct skynet_context *ctx) {
 				// 0 is reserved
 				handle = 1;
 			}
-            int hash = HASH_HANDLE(s, handle);
+			int hash = handle & (s->slot_size-1);
 			if (s->slot[hash] == NULL) {
 				s->slot[hash] = ctx;
 				s->handle_index = handle + 1;
@@ -62,9 +61,11 @@ skynet_handle_register(struct skynet_context *ctx) {
 		struct skynet_context ** new_slot = skynet_malloc(s->slot_size * 2 * sizeof(struct skynet_context *));
 		memset(new_slot, 0, s->slot_size * 2 * sizeof(struct skynet_context *));
 		for (i=0;i<s->slot_size;i++) {
-			int hash = skynet_context_handle(s->slot[i]) & (s->slot_size * 2 - 1);
-			assert(new_slot[hash] == NULL);
-			new_slot[hash] = s->slot[i];
+			if (s->slot[i]) {
+				int hash = skynet_context_handle(s->slot[i]) & (s->slot_size * 2 - 1);
+				assert(new_slot[hash] == NULL);
+				new_slot[hash] = s->slot[i];
+			}
 		}
 		skynet_free(s->slot);
 		s->slot = new_slot;
@@ -79,7 +80,7 @@ skynet_handle_retire(uint32_t handle) {
 
 	rwlock_wlock(&s->lock);
 
-	uint32_t hash = HASH_HANDLE(s, handle);
+	uint32_t hash = handle & (s->slot_size-1);
 	struct skynet_context * ctx = s->slot[hash];
 
 	if (ctx != NULL && skynet_context_handle(ctx) == handle) {
@@ -124,12 +125,11 @@ skynet_handle_retireall() {
 			uint32_t handle = 0;
 			if (ctx) {
 				handle = skynet_context_handle(ctx);
-            }
+				++n;
+			}
 			rwlock_runlock(&s->lock);
 			if (handle != 0) {
-				if (skynet_handle_retire(handle)) {
-					++n;
-				}
+				skynet_handle_retire(handle);
 			}
 		}
 		if (n==0)
@@ -144,7 +144,7 @@ skynet_handle_grab(uint32_t handle) {
 
 	rwlock_rlock(&s->lock);
 
-	uint32_t hash = HASH_HANDLE(s, handle);
+	uint32_t hash = handle & (s->slot_size-1);
 	struct skynet_context * ctx = s->slot[hash];
 	if (ctx && skynet_context_handle(ctx) == handle) {
 		result = ctx;
