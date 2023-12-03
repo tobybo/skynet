@@ -6,7 +6,7 @@ local loader = {}
 
 function loader.register(filename, index)
 	local f = assert(io.open(filename), "Can't open sproto file")
-	local data = f:read "a"
+	local data = f:read("a") -- 读取整个文件
 	f:close()
 	local sp = core.newproto(parser.parse(data))
 	core.saveproto(sp, index)
@@ -18,7 +18,7 @@ function loader.save(bin, index)
 end
 
 function loader.load(index)
-	local sp = core.loadproto(index)
+	local sp = core.loadproto(index) -- sp is lightuserdata
 	--  no __gc in metatable
 	return sproto.sharenew(sp)
 end
