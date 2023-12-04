@@ -3,4 +3,4 @@
 	url = https://github.com/jemalloc/jemalloc.git
 [submodule "3rd/lua-cjson"]
 	path = 3rd/lua-cjson
-	url = git@github.com:tobybo/lua-cjson.git
+	url = https://github.com/tobybo/lua-cjson.git
