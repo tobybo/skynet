@@ -233,9 +233,7 @@ local function websocket_mask(mask, data, length)
 end
 
 function ws:recv_frame()
-    local size = read(self.id, 2)
     local data, err = read(self.id, 2)
-
     if not data then
         return false, nil, "Read first 2 byte error: " .. err
     end
