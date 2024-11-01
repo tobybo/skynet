@@ -60,31 +60,31 @@ skynet.start(function()
 			interface.init()
 		end
 		-- limit request body size to 8192 (you can pass nil to unlimit)
-		local code, url, method, header, body = httpd.read_request(interface.read, 8192)
-        LOG("callback, code,%s, url,%s", code, url)
+		local code, url, method, header, body = httpd.read_request(interface.read, 9999999)
         LOG("callback, code,%s, url,%s", code, url)
 		if code then
 			if code ~= 200 then
 				response(id, interface.write, code)
 			else
-				local tmp = {}
-				if header.host then
-					table.insert(tmp, string.format("host: %s", header.host))
-				end
-				local path, query = urllib.parse(url)
-				table.insert(tmp, string.format("path: %s", path))
-				if query then
-					local q = urllib.parse_query(query)
-					for k, v in pairs(q) do
-						table.insert(tmp, string.format("query: %s= %s", k,v))
-					end
-				end
-				table.insert(tmp, "-----header----")
-				for k,v in pairs(header) do
-					table.insert(tmp, string.format("%s = %s",k,v))
-				end
-				table.insert(tmp, "-----body----\n" .. body)
-				response(id, interface.write, code, table.concat(tmp,"\n"))
+                local tmp = {}
+                if header.host then
+                    table.insert(tmp, string.format("host: %s", header.host))
+                end
+                local path, query = urllib.parse(url)
+                table.insert(tmp, string.format("path: %s", path))
+                if query then
+                    local q = urllib.parse_query(query)
+                    for k, v in pairs(q) do
+                        table.insert(tmp, string.format("query: %s= %s", k,v))
+                    end
+                end
+                table.insert(tmp, "-----header----")
+                for k,v in pairs(header) do
+                    table.insert(tmp, string.format("%s = %s",k,v))
+                end
+                table.insert(tmp, "-----body----\n" .. body)
+                LOG("callback, header and body,%s", table.concat(tmp, "\n"))
+                response(id, interface.write, code, "")
 			end
 		else
 			if url == sockethelper.socket_error then

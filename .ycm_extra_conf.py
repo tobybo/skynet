@@ -43,6 +43,8 @@ flags = [
 '-I',
 './skynet-src',
 '-I',
+'./service-src',
+'-I',
 './3rd/lua',
 '-I',
 './3rd/http-parser',

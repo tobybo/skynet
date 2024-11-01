@@ -25,6 +25,7 @@ TLS_INC=
 
 # http_parser
 
+HTTP_PARSER_PATH := 3rd/http-parser/lib
 HTTP_PARSER := 3rd/http-parser/lib/libhttp_parser.so
 HTTP_PARSER_INC := 3rd/http-parser/
 
@@ -32,7 +33,8 @@ $(HTTP_PARSER): 3rd/http-parser/
 	cd 3rd/http-parser && \
 	$(MAKE) CC=$(CC) library && \
 	mkdir -p lib && \
-	mv libhttp_parser* lib/
+	mv libhttp_parser.* lib/ && \
+	cd lib && ln -s libhttp_parser.so.* libhttp_parser.so
 
 http_parser : $(HTTP_PARSER)
 
@@ -97,7 +99,7 @@ all : \
   $(foreach v, $(CSERVICE), $(CSERVICE_PATH)/$(v).so) \
   $(foreach v, $(LUA_CLIB), $(LUA_CLIB_PATH)/$(v).so)
 
-$(SKYNET_BUILD_PATH)/skynet : $(foreach v, $(SKYNET_SRC), skynet-src/$(v)) $(LUA_LIB) $(MALLOC_STATICLIB) $(HTTP_PARSER)
+$(SKYNET_BUILD_PATH)/skynet : $(foreach v, $(SKYNET_SRC), skynet-src/$(v)) $(LUA_LIB) $(MALLOC_STATICLIB)
 	$(CC) $(CFLAGS) -o $@ -L$(HTTP_PARSER_INC)/lib $^ 3rd/http-parser/http_parser.c -Iskynet-src -I$(JEMALLOC_INC) -I$(HTTP_PARSER_INC) $(LDFLAGS) $(EXPORT) $(SKYNET_LIBS) $(SKYNET_DEFINES)
 
 $(LUA_CLIB_PATH) :
@@ -136,7 +138,8 @@ $(LUA_CLIB_PATH)/lpeg.so : 3rd/lpeg/lpcap.c 3rd/lpeg/lpcode.c 3rd/lpeg/lpprint.c
 
 clean :
 	rm -f $(SKYNET_BUILD_PATH)/skynet $(CSERVICE_PATH)/*.so $(LUA_CLIB_PATH)/*.so && \
-  	rm -rf $(SKYNET_BUILD_PATH)/*.dSYM $(CSERVICE_PATH)/*.dSYM $(LUA_CLIB_PATH)/*.dSYM
+  	rm -rf $(SKYNET_BUILD_PATH)/*.dSYM $(CSERVICE_PATH)/*.dSYM $(LUA_CLIB_PATH)/*.dSYM && \
+	rm -f $(HTTP_PARSER_PATH)/*
 
 cleanall: clean
 ifneq (,$(wildcard 3rd/jemalloc/Makefile))
