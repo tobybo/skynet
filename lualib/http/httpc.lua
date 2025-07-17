@@ -173,4 +173,8 @@ function httpc.post(host, url, form, recvheader)
 	return httpc.request("POST", host, url, recvheader, header, table.concat(body , "&"))
 end
 
+function httpc.post_any(method, host, url, recvheader, header, body)
+    return httpc.request(method, host, url, recvheader, header, body)
+end
+
 return httpc
